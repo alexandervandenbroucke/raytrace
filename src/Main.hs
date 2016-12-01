@@ -104,21 +104,31 @@ planeLineIsect normal d line_position line_dir =
            Nothing
          else do
            MkV3D ix iz iy <-
-             planeLineIsect (MkV3D a c b) d (MkV3D lx lz ly) (MkV3D a' c' b')
+             planeLineIsect' (MkV3D a c b) d (MkV3D lx lz ly) (MkV3D a' c' b')
            Just (MkV3D ix iy iz)
        else do
          MkV3D iz iy ix <-
-           planeLineIsect (MkV3D c b a) d (MkV3D lz ly lx) (MkV3D c' b' a')
+           planeLineIsect' (MkV3D c b a) d (MkV3D lz ly lx) (MkV3D c' b' a')
          Just (MkV3D ix iy iz)
      else
-      let frac = (normal *@ line_dir) / c'
-          z = (-d - a*lx - b*ly + (frac-c)*lz)/frac
-          x = (a' * (z - lz)/ c') + lx
-          y = (b' * (z - lz)/ c') + ly
-      in if abs frac <= 0.00001 then
-           Nothing
-         else
-           Just (MkV3D x y z)
+       planeLineIsect' normal d line_position line_dir
+
+planeLineIsect' :: Vector3D -> Double -> Vector3D -> Vector3D -> Maybe Vector3D
+planeLineIsect' normal d line_position line_dir = 
+  let MkV3D a  b  c  = normal
+      MkV3D lx ly lz = line_position
+      MkV3D a' b' c' = line_dir
+      frac = (normal *@ line_dir) / c'
+      z = (-d - a*lx - b*ly + (frac-c)*lz)/frac
+      x = (a' * (z - lz)/ c') + lx
+      y = (b' * (z - lz)/ c') + ly
+  in if abs frac <= 0.00001 then
+       Nothing
+     else
+       Just (MkV3D x y z)
+{-# INLINE planeLineIsect' #-}
+-- ^ this inline gains us about 10 seconds on stacked_cubes :-D
+-- Note to self: don't recurse unless necessary.
 
 -- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 -- Cubes
