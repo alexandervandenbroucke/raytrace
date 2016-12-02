@@ -255,8 +255,8 @@ trace camera lights shape x y = case isect shape (cast camera x y) of
 -------------------------------------------------------------------------------
 -- Main function
 
--- The rendering algorithm is O(W * H * L * (N+1)) where L = #lights
---                                                       N = #objects
+-- The rendering algorithm is O(W * H * L * (N+1)) where L = # (point) lights
+--                                                       N = # objects
 --                                                       W = width (in pixels)
 --                                                       H = height (in pixels)
 
