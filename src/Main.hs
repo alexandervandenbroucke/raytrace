@@ -1,7 +1,11 @@
+{-# LANGUAGE BangPatterns #-}
+
 module Main where
 
 import Codec.Picture
 import Control.Monad (guard)
+import Data.Array.Repa as Repa hiding (Shape)
+import Control.Monad.Identity (Identity,runIdentity)
 
 
 -------------------------------------------------------------------------------
@@ -260,18 +264,46 @@ trace camera lights shape x y = case isect shape (cast camera x y) of
 --                                                       W = width (in pixels)
 --                                                       H = height (in pixels)
 
+-- main :: IO ()
+-- main =
+--   saveBmpImage "trace.bmp"
+--   $ ImageRGB8
+--   $ generateImage (trace camera [light2, light, ambient 0.2] world) w h where
+--     world  = stacked_cubes
+--     camera = fixedCamera w h
+--     light  = pointLight world (PixelRGB8 100 100 100) (MkV3D 2 0 0)
+--     light2 = pointLight world (PixelRGB8 100 100   0)   (MkV3D 0 4 (-10))
+--     colors = [red,green,blue,magenta,cyan,yellow,orange,orchid,aquamarine]
+--     w      = 1024
+--     h      = 1024
+
 main :: IO ()
-main =
-  saveBmpImage "trace.bmp"
-  $ ImageRGB8
-  $ generateImage (trace camera [light2, light, ambient 0.2] world) w h where
-    world  = stacked_cubes
-    camera = fixedCamera w h
-    light  = pointLight world (PixelRGB8 100 100 100) (MkV3D 2 0 0)
-    light2 = pointLight world (PixelRGB8 100 100   0)   (MkV3D 0 4 (-10))
-    colors = [red,green,blue,magenta,cyan,yellow,orange,orchid,aquamarine]
-    w      = 1024
-    h      = 1024
+main = 
+  let trace' =
+        -- parallelTrace w h (trace camera lights world)
+        trace camera lights world
+      world  = stacked_cubes
+      camera = fixedCamera w h
+      light  = pointLight world (PixelRGB8 100 100 100) (MkV3D 2 0 0)
+      light2 = pointLight world (PixelRGB8 100 100   0)   (MkV3D 0 4 (-10))
+      lights = [light2, light, ambient 0.2]
+      colors = [red,green,blue,magenta,cyan,yellow,orange,orchid,aquamarine]
+      w      = 1024
+      h      = 1024
+  in saveBmpImage "trace.bmp" $ ImageRGB8 $ generateImage trace' w h
+
+parallelTrace :: Int -> Int
+              -> (Int -> Int -> PixelRGB8)
+              -> Int -> Int
+              -> PixelRGB8
+parallelTrace w h trace x y =
+  let tracedD = fromFunction (Z :. h :. w) trace' where
+        trace' (Z :. y :. x) = (r,g,b) where PixelRGB8 r g b = trace x y
+      traced :: Array U DIM2 (Pixel8,Pixel8,Pixel8)
+      traced = runIdentity $ computeP tracedD
+      (r,g,b) = traced ! (Z :. y :. x)
+  in PixelRGB8 r g b
+{-# INLINE parallelTrace #-}
 
 planes = mconcat [
   rectangle red   (MkV3D (-0.5) (-0.5) (-2))   (MkV3D 1 0 0) (MkV3D 0 1 0),
