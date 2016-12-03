@@ -4,7 +4,7 @@ module Main where
 
 import Codec.Picture
 import Control.Monad (guard)
-import Data.Array.Repa as Repa hiding (Shape)
+import Data.Array.Repa as Repa hiding (Shape,map)
 import Control.Monad.Identity (Identity,runIdentity)
 
 
@@ -171,6 +171,7 @@ yellow  = PixelRGB8 255 255 0
 orange  = PixelRGB8 255 134 0
 orchid  = PixelRGB8 153 50  204
 aquamarine = PixelRGB8 69 139 116
+{-# INLINE black #-}
 
 
 -------------------------------------------------------------------------------
@@ -182,31 +183,42 @@ data Light
       light :: Vector3D -> Vector3D -> PixelRGB8 -> PixelRGB8
     }
 
--- | point specular light source
-pointLight :: Shape -> PixelRGB8 -> Vector3D -> Light
-pointLight world (PixelRGB8 lr lg lb) position =
+instance Monoid Light where
+  mempty = MkLight $ \_ _ _ -> black
+  {-# INLINE mempty #-}
+  mappend (MkLight l1) (MkLight l2) = MkLight $ \ipos inormal intensity ->
+     let clamp x y = if x + y < x then 255 else x + y
+         addPixelRGB8 (PixelRGB8 r1 g1 b1) (PixelRGB8 r2 g2 b2) =
+           PixelRGB8 (clamp r1 r2) (clamp g1 g2) (clamp b1 b2)
+     in l1 ipos inormal intensity `addPixelRGB8` l2 ipos inormal intensity
+  {-# INLINE mappend #-}
+
+p2d :: Pixel8 -> Double
+p2d i = fromInteger (toInteger i)
+{-# INLINE p2d #-}
+
+-- | Point specular light source
+pointLight :: Shape -> Double -> Vector3D -> Light
+pointLight world intensity position =
   MkLight $ \ipos inormal (PixelRGB8 ir ig ib) ->
     let to_light = normalize (position - ipos)
     in case isect world (MkRay (ipos + scalar 0.00001 to_light) to_light) of
-      Just (ipos',_,c)
-        | (position - ipos') *@ to_light >= 0 -> PixelRGB8 ir ig ib
+      Just (ipos',_,_)
+        | (position - ipos') *@ to_light >= 0 -> black
       _ ->
         let f = max 0 (to_light *@ inormal)
-            r = round $ f * fromInteger (toInteger lr)
-            g = round $ f * fromInteger (toInteger lg)
-            b = round $ f * fromInteger (toInteger lb)
-            clamp x y = if x + y < x then 255 else x + y
-        in PixelRGB8 (clamp r ir) (clamp g ig) (clamp b ib)
+            r = round $ f * p2d ir * intensity
+            g = round $ f * p2d ig * intensity
+            b = round $ f * p2d ib * intensity
+        in PixelRGB8 r g b
 
--- ambient lighting
+-- | Ambient lighting
 ambient :: Double -> Light
 ambient f = MkLight $ \_ _ (PixelRGB8 ir ig ib) ->
-  let r = round $ f * fromInteger (toInteger ir)
-      g = round $ f * fromInteger (toInteger ig)
-      b = round $ f * fromInteger (toInteger ib)
+  let r = round $ f * p2d ir
+      g = round $ f * p2d ig
+      b = round $ f * p2d ib
   in PixelRGB8 r g b
-
--- todo: diffuse lights
 
 -------------------------------------------------------------------------------
 -- Camera: casts (creates) rays.
@@ -216,20 +228,6 @@ data Camera
     {
       cast :: Int -> Int -> Ray
     }
-
--- rotXY :: Double -> M3D
--- rotXY a = M3D (cos a) (-sin a) 0
---               (sin a) (cos a)  0
---               0       0        1
--- rotXZ :: Double -> M3D
--- rotXZ a = M3D (cos a) 0 (-sin a)
---               0       1 0
---               (sin a) 1 (cos a)
- 
--- rotYZ :: Double -> M3D
--- rotYZ a = M3D 1 0       0
---               0 (cos a) (-sin a)
---               0 (sin a) (cos a)
 
 fixedCamera :: Int -> Int -> Camera
 fixedCamera width height =
@@ -251,11 +249,11 @@ fixedCamera width height =
 -------------------------------------------------------------------------------
 -- Ray tracing
 
-trace :: Camera -> [Light] -> Shape -> Int -> Int -> PixelRGB8
-trace camera lights shape x y = case isect shape (cast camera x y) of
+trace :: Camera -> Light -> Shape -> Int -> Int -> PixelRGB8
+trace camera lights world x y = case isect world (cast camera x y) of
   Nothing               -> black
-  Just (ipos,inormal,c) -> foldr (\l -> light l ipos inormal) c lights
-
+  Just (ipos,inormal,c) -> light lights ipos inormal c
+{-# INLINE trace #-}
 -------------------------------------------------------------------------------
 -- Main function
 
@@ -264,29 +262,16 @@ trace camera lights shape x y = case isect shape (cast camera x y) of
 --                                                       W = width (in pixels)
 --                                                       H = height (in pixels)
 
--- main :: IO ()
--- main =
---   saveBmpImage "trace.bmp"
---   $ ImageRGB8
---   $ generateImage (trace camera [light2, light, ambient 0.2] world) w h where
---     world  = stacked_cubes
---     camera = fixedCamera w h
---     light  = pointLight world (PixelRGB8 100 100 100) (MkV3D 2 0 0)
---     light2 = pointLight world (PixelRGB8 100 100   0)   (MkV3D 0 4 (-10))
---     colors = [red,green,blue,magenta,cyan,yellow,orange,orchid,aquamarine]
---     w      = 1024
---     h      = 1024
-
 main :: IO ()
 main = 
   let trace' =
-        -- parallelTrace w h (trace camera lights world)
-        trace camera lights world
+        parallelTrace w h (trace camera lights world)
+        -- trace camera lights world
       world  = stacked_cubes
       camera = fixedCamera w h
-      light  = pointLight world (PixelRGB8 100 100 100) (MkV3D 2 0 0)
-      light2 = pointLight world (PixelRGB8 100 100   0)   (MkV3D 0 4 (-10))
-      lights = [light2, light, ambient 0.2]
+      light  = pointLight world 0.7 (MkV3D 2 0 0)
+      light2 = pointLight world 0.7 (MkV3D 0 4 (-10))
+      lights = mconcat [light, light2, ambient 0.1]
       colors = [red,green,blue,magenta,cyan,yellow,orange,orchid,aquamarine]
       w      = 1024
       h      = 1024
