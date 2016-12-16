@@ -11,6 +11,7 @@ import Data.Array.Repa (
   computeP,
   (!))
 import Control.Monad.Identity (Identity,runIdentity)
+import Control.Applicative (ZipList(..))
 
 
 -------------------------------------------------------------------------------
@@ -305,14 +306,13 @@ trace camera lights world x y = case isect world (cast camera x y) of
 
 main :: IO ()
 main = 
-  let trace' =
-        parallelTrace w h (trace camera lights world)
-        -- trace camera lights world
-      world  = stacked_cubes
+  let trace' = parallelTrace w h (trace camera lights world)
+      -- trace' = trace camera lights world
+      world  = cylinder 20 1 5 (MkV3D 0 (-2) (-10)) `mappend` axes
       camera = fixedCamera w h
       light  = pointLight world 0.7 (MkV3D 2 0 0)
-      light2 = pointLight world 0.7 (MkV3D 0 4 (-10))
-      lights = mconcat [light, light2, ambient 0.1]
+      light2 = pointLight world 0.3 (MkV3D 0 4 (-10))
+      lights = mconcat [light,light2,ambient 0.2]
       colors = [red,green,blue,magenta,cyan,yellow,orange,orchid,aquamarine]
       w      = 1024
       h      = 1024
@@ -391,3 +391,37 @@ triangle_example =
   `mappend`
   rectangle blue (MkV3D 0 (-2) 0) (MkV3D 20 0 0) (MkV3D 0 0 (-40))
 
+cylinder :: Int -> Double -> Double -> Vector3D -> Shape
+cylinder n h r point =
+  let points =
+        [ (r*cos (i*alpha),r*sin (i*alpha)) | i <- [0..(n'-1)]] ++ [(r,0)]
+      topPoints    = ZipList [point + MkV3D x h z     | (x,z) <- points]
+      botPoints    = ZipList [point + MkV3D x 0 z     | (x,z) <- points]
+      mantlePoints = ZipList [point + MkV3D x (h/2) z | (x,z) <- points]
+      normals      = ZipList [MkV3D (x/r) 0 (z/r)     | (x,z) <- points]
+      topPoint = point + MkV3D 0 h 0
+      alpha    = 2*pi/n'
+      n'       = fromInteger (toInteger n)
+      tailZL    = ZipList . tail . getZipList
+      mconcatZL = mconcat . getZipList
+      --
+      top = mconcatZL $ triangle blue topPoint <$> tailZL topPoints <*> topPoints
+      bot = mconcatZL $ triangle red  point    <$> botPoints <*> tailZL botPoints
+      mantle = mconcatZL
+               $   mantleRect
+               <$> mantlePoints
+               <*> tailZL mantlePoints
+               <*> normals
+               <*> tailZL normals
+      mantleRect p1 p2 n1 n2 = MkShape $ \ray -> do
+        let p     = scalar (0.5) (p1 + p2)
+            dP = p1 - p2 -- aka the width of this piece
+            dN = n1 - n2
+            dNdP  = dN / dP
+        (i,_,color) <- isect (rectangle green p dP (MkV3D 0 h 0)) ray
+        let MkV3D nx _ nz = n2 + (i - p2) * dNdP
+            -- linearly interpolated normal
+        return (i, MkV3D nx 0 nz, color)
+  in bot `mappend` top `mappend`mantle
+     `mappend`
+     rectangle cyan (MkV3D 0 0 (-16)) (MkV3D 20 0 0) (MkV3D 0 20 0)
