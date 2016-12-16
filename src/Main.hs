@@ -4,7 +4,12 @@ module Main where
 
 import Codec.Picture
 import Control.Monad (guard)
-import Data.Array.Repa as Repa hiding (Shape,map)
+import Data.Array.Repa (
+  Array,U,
+  Z(Z), (:.)((:.)), DIM2,
+  fromFunction,
+  computeP,
+  (!))
 import Control.Monad.Identity (Identity,runIdentity)
 
 
@@ -20,6 +25,11 @@ instance Num Vector3D where
   fromInteger i = MkV3D d d d where d = fromInteger i
   abs = undefined
   signum (MkV3D x y z) = MkV3D (signum x) (signum y) (signum z)
+
+instance Fractional Vector3D where
+  MkV3D x1 y1 z1 / MkV3D x2 y2 z2 = MkV3D (x1/x2) (y1/y2) (z1/z2)
+  recip (MkV3D x y z) = MkV3D (recip x) (recip y) (recip z)
+  fromRational r = MkV3D r' r' r' where r' = fromRational r
 
 -- inner product
 (*@) :: Vector3D -> Vector3D -> Double
@@ -89,7 +99,7 @@ rectangle color point width height =
       -- verify positive ray direction
       guard $
         (ray_direction ray) *@ (isect - ray_position ray) >= 0
-      -- verify within bounds of square
+      -- verify within bounds of rectangle
       guard $
         let dV = isect - point'
             dw = dV *@ width
@@ -172,6 +182,37 @@ orange  = PixelRGB8 255 134 0
 orchid  = PixelRGB8 153 50  204
 aquamarine = PixelRGB8 69 139 116
 {-# INLINE black #-}
+
+-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+-- Triangle
+
+triangle :: PixelRGB8 -> Vector3D -> Vector3D -> Vector3D -> Shape
+triangle color pa pb pc =
+  let u = pb - pa
+      v = pc - pa
+      h = u - scalar (u *@ v / v *@ v) v
+      pd = pb - h
+      w1 = pa - pd
+      w2 = pc - pd
+      hh = h *@ h
+      ww1 = w1 *@ w1
+      ww2 = w2 *@ w2
+      normal = normalize (u *# v)
+      d = scalar (-1) pa *@ normal
+  in MkShape $ \ray -> do
+    isect <- planeLineIsect normal d (ray_position ray) (ray_direction ray)
+    -- verify positive ray direction
+    guard $ (ray_direction ray) *@ (isect - ray_position ray) >= 0
+    -- verify within bounds of triangle
+    guard $
+      let dI = isect - pd
+          dw1 = dI *@ w1
+          dw2 = dI *@ w2
+          dh  = dI *@ h
+      in (dh >= 0 && dw1 >= 0 && dh / hh + dw1 / ww1 <= 1) -- triangle ADB
+         ||
+         (dh >= 0 && dw2 >= 0 && dh / hh + dw2 / ww2 <= 1) -- triangle BDC
+    return (isect,normal,color)
 
 
 -------------------------------------------------------------------------------
@@ -295,6 +336,12 @@ planes = mconcat [
   rectangle blue  (MkV3D (-1)   (-0.5) (-1.5)) (MkV3D 0 1 0) (MkV3D 0 0 (1)),
   rectangle green (MkV3D (-0.5) (-1)   (-1.5)) (MkV3D 1 0 0) (MkV3D 0 0 (-1))]
 
+axes = mconcat [
+  rectangle red   (MkV3D (-0.5) (-0.5) (-0.5))   (MkV3D 1 0 0) (MkV3D 0 0.1 0),
+  rectangle blue  (MkV3D (-0.5) (-0.5) (-0.5)) (MkV3D 0 1 0) (MkV3D 0 0 0.1),
+  rectangle green (MkV3D (-0.5) (-0.5) (-0.5)) (MkV3D 0.1 0 0) (MkV3D 0 0 (-1))]
+
+
 cubes =
   let colors = [red,green,blue,magenta,cyan,aquamarine,yellow,orange,orchid]
   in colorcube colors (MkV3D (-2) 0 (-6)) 1
@@ -328,3 +375,19 @@ stacked_cubes =
      rectangle green (MkV3D 0      4 (-10.2)) (MkV3D 0 (-0.5) 0) (MkV3D 0.3 0 0)
      `mappend`
      rectangle orange (MkV3D 2.2 (-0.5) (-10)) (MkV3D 0 12 0) (MkV3D (-5) 0 (-10))
+
+triangle_example =
+  rectangle cyan (MkV3D 0 0 (-10)) (MkV3D 4.0 0 0) (MkV3D 0 4.0 0)
+  `mappend`
+  rectangle cyan (MkV3D (-3) 0 (-9)) (MkV3D (2.0) 0 (-2.0)) (MkV3D 0 4.0 0)
+  `mappend`
+  rectangle cyan (MkV3D 3 0 (-9)) (MkV3D (2.0) 0 (2.0)) (MkV3D 0 4.0 0)
+  `mappend`
+  cube yellow (MkV3D 0 (-1.5) (-5)) 1.0
+  `mappend`
+  triangle orange (MkV3D 0 1 (-4)) (MkV3D (-1) 0  (-4)) (MkV3D 1 0  (-4))
+  `mappend`
+  rectangle green (MkV3D 0 0 (-3)) (MkV3D 1 0 0) (MkV3D 0 1 0)
+  `mappend`
+  rectangle blue (MkV3D 0 (-2) 0) (MkV3D 20 0 0) (MkV3D 0 0 (-40))
+
