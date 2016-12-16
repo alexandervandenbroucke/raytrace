@@ -239,7 +239,7 @@ p2d :: Pixel8 -> Double
 p2d i = fromInteger (toInteger i)
 {-# INLINE p2d #-}
 
--- | Point specular light source
+-- | Point light source
 pointLight :: Shape -> Double -> Vector3D -> Light
 pointLight world intensity position =
   MkLight $ \ipos inormal (PixelRGB8 ir ig ib) ->
