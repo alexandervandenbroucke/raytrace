@@ -86,8 +86,10 @@ instance Monoid Shape where
            in if d1 <= d2 then isect1 else isect2
 
 -- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
--- Planes, more like parallelograms
+-- Planes (rectangles)
 
+-- | Takes a color, position, width and height and creates the corresponding 3D
+--   rectangle. Width and height must be orthogonal.
 rectangle :: PixelRGB8 -> Vector3D -> Vector3D -> Vector3D -> Shape
 rectangle color point width height =
   let normal = normalize (width *# height)
@@ -271,16 +273,30 @@ data Camera
       cast :: Int -> Int -> Ray
     }
 
+-- | Takes width and height in pixels and returns a 'Camera' that has a fixed
+--   fov of 90 degrees, is positioned at the origin and looks along the z-axis.
 fixedCamera :: Int -> Int -> Camera
 fixedCamera width height =
-  let w = fromIntegral width  :: Double
-      h = fromIntegral height :: Double
-      fov = pi/2
-      scaleX = 1.0 / w
-      scaleY = scaleX * (-h) / w
-      dX = (-0.5 + 0.5) / 2 - scaleX * (w - 0)/2
-      dY = (-0.5 + 0.5) / 2 - scaleY * (h - 0)/2
-      d  = tan(fov/2) * dX -- fov : 90 degrees (pi/2 / 2)
+  let w = fromIntegral width  :: Double -- viewport width in pixels
+      h = fromIntegral height :: Double -- viewport height in pixels
+      fov = pi/2                  -- horizontal FOV is fixed to 90 degrees
+      -- Converting from pixels to world is done by multiplying with a
+      -- scaling factor and adding an offset (one for each axis).
+
+      -- SCALING FACTORS
+      -- (ratio of world viewport size vs pixel viewport size)
+      scaleX = 1.0 / w            -- Here 1.0 is the width of viewport in
+                                  -- world units.
+      scaleY = scaleX * (-h / w)  -- The viewport height in world units is 
+                                  -- determined by the aspect ratio of h and w.
+      -- OFFSETS
+      -- are difference in world units between viewport midpoint and
+      -- picture midpoint. The viewport midpoint is assumed to be the origin.
+      -- the picture midpoint is assumed to be the middle of the picture
+      -- (width and height / 2).
+      dX = 0 - scaleX * w/2
+      dY = 0 - scaleY * h/2
+      d  = tan(fov/2) * dX  -- distance from the screen
   in MkCamera $ \screenX screenY ->
     let posX = scaleX * (fromIntegral screenX) + dX
         posY = scaleY * (fromIntegral screenY) + dY
@@ -291,11 +307,13 @@ fixedCamera width height =
 -------------------------------------------------------------------------------
 -- Ray tracing
 
+-- | Trace the ray generated at a given pixel position.
 trace :: Camera -> Light -> Shape -> Int -> Int -> PixelRGB8
 trace camera lights world x y = case isect world (cast camera x y) of
   Nothing               -> black
   Just (ipos,inormal,c) -> light lights ipos inormal c
 {-# INLINE trace #-}
+
 -------------------------------------------------------------------------------
 -- Main function
 
@@ -425,7 +443,7 @@ cylinder n h r point =
                <*> normals
                <*> tailZL normals
       mantleRect p1 p2 n1 n2 = MkShape $ \ray -> do
-        let p     = scalar (0.5) (p1 + p2)
+        let p  = scalar (0.5) (p1 + p2)
             dP = p1 - p2 -- aka the width of this piece
             dN = n1 - n2
             dNdP  = dN / dP
