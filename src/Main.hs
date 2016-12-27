@@ -337,9 +337,20 @@ planes = mconcat [
   rectangle green (MkV3D (-0.5) (-1)   (-1.5)) (MkV3D 1 0 0) (MkV3D 0 0 (-1))]
 
 axes = mconcat [
-  rectangle red   (MkV3D (-0.5) (-0.5) (-0.5))   (MkV3D 1 0 0) (MkV3D 0 0.1 0),
-  rectangle blue  (MkV3D (-0.5) (-0.5) (-0.5)) (MkV3D 0 1 0) (MkV3D 0 0 0.1),
-  rectangle green (MkV3D (-0.5) (-0.5) (-0.5)) (MkV3D 0.1 0 0) (MkV3D 0 0 (-1))]
+  rectangle red   centre (MkV3D 1 0 0) (MkV3D 0 0.1 0),
+  rectangle blue  centre (MkV3D 0 1 0) (MkV3D 0 0 0.1),
+  rectangle green centre (MkV3D 0.1 0 0) (MkV3D 0 0 (-1)),
+  triangle red   (centre + MkV3D 0.6   0     0)
+                 (centre + MkV3D 0.5   0.05  0)
+                 (centre + MkV3D 0.5 (-0.05) 0),
+  triangle blue  (centre + MkV3D 0 0.6   0)
+                 (centre + MkV3D 0 0.5   0.05)
+                 (centre + MkV3D 0 0.5 (-0.05)),
+  triangle green (centre + MkV3D   0     0 0.6)
+                 (centre + MkV3D   0.05  0 0.5)
+                 (centre + MkV3D (-0.05) 0 0.5)
+  ]
+  where centre = MkV3D (-0.5) (-0.5) (-1)
 
 
 cubes =
