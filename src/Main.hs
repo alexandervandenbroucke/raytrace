@@ -442,15 +442,16 @@ cylinder n h r point =
                <*> tailZL mantlePoints
                <*> normals
                <*> tailZL normals
-      mantleRect p1 p2 n1 n2 = MkShape $ \ray -> do
+      mantleRect p1 p2 n1 n2 =
         let p  = scalar (0.5) (p1 + p2)
             dP = p1 - p2 -- aka the width of this piece
             dN = n1 - n2
             dNdP  = dN / dP
-        (i,_,color) <- isect (rectangle green p dP (MkV3D 0 h 0)) ray
-        let MkV3D nx _ nz = n2 + (i - p2) * dNdP
-            -- linearly interpolated normal
-        return (i, MkV3D nx 0 nz, color)
-  in bot `mappend` top `mappend`mantle
+        in MkShape $ \ray -> do
+          (i,_,color) <- isect (rectangle green p dP (MkV3D 0 h 0)) ray
+          let MkV3D nx _ nz = n2 + (i - p2) * dNdP
+              -- linearly interpolated normal
+          return (i, MkV3D nx 0 nz, color)
+  in bot `mappend` top `mappend` mantle
      `mappend`
      rectangle cyan (MkV3D 0 0 (-16)) (MkV3D 20 0 0) (MkV3D 0 20 0)
