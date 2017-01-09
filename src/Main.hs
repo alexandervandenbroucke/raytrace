@@ -66,10 +66,21 @@ data Ray
     }
   deriving Show
 
+data Material
+  = MkMaterial
+    {
+      mat_diffuse     :: !PixelRGB8,
+      mat_specular    :: !PixelRGB8,
+      mat_specularity :: !Double
+    }
+
+nonSpecular :: PixelRGB8 -> Material
+nonSpecular diffuse = MkMaterial diffuse black 1.0
+
 newtype Shape
   = MkShape
     {
-      isect :: Ray -> Maybe (Vector3D,Vector3D,PixelRGB8)
+      isect :: Ray -> Maybe (Vector3D,Vector3D,Material)
     }
 
 instance Monoid Shape where
@@ -88,10 +99,10 @@ instance Monoid Shape where
 -- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 -- Planes (rectangles)
 
--- | Takes a color, position, width and height and creates the corresponding 3D
---   rectangle. Width and height must be orthogonal.
-rectangle :: PixelRGB8 -> Vector3D -> Vector3D -> Vector3D -> Shape
-rectangle color point width height =
+-- | Takes a material, position, width and height and creates the corresponding
+--   3D rectangle. Width and height must be orthogonal.
+rectangle :: Material -> Vector3D -> Vector3D -> Vector3D -> Shape
+rectangle material point width height =
   let normal = normalize (width *# height)
       ww     = width  *@ width
       hh     = height *@ height
@@ -108,7 +119,7 @@ rectangle color point width height =
             dw = dV *@ width
             dh = dV *@ height
         in 0 <= dw && dw <= ww && 0 <= dh && dh <= hh
-      return (isect, normal, color)
+      return (isect, normal, material)
 
 planeLineIsect :: Vector3D -> Double -> Vector3D -> Vector3D -> Maybe Vector3D
 planeLineIsect normal d line_position line_dir =
@@ -150,47 +161,67 @@ planeLineIsect' normal d line_position line_dir =
 -- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 -- Cubes
 
-cube :: PixelRGB8 -> Vector3D -> Double -> Shape
-cube color point l = colorcube [color] point l
+cube :: Material -> Vector3D -> Double -> Shape
+cube material point l = colorcube [material] point l
 
-colorcube :: [PixelRGB8] -> Vector3D -> Double -> Shape
+colorcube :: [Material] -> Vector3D -> Double -> Shape
 colorcube [] _ _ = error "colorcube: list of colors must not be empty."
-colorcube colors point l =
-  let [ctop,cbottom,cfront,cback,cleft,cright] = take 6 $ cycle colors
+colorcube materials point l =
+  let [mtop,mbottom,mfront,mback,mleft,mright] = take 6 $ cycle materials
       l2 = l / 2
   in mconcat [
     -- top
-    rectangle ctop    (point+MkV3D 0 l2 0) (MkV3D l 0 0) (MkV3D 0 0 (-l)),
+    rectangle mtop    (point+MkV3D 0 l2 0) (MkV3D l 0 0) (MkV3D 0 0 (-l)),
     -- bottom
-    rectangle cbottom (point-MkV3D 0 l2 0) (MkV3D l 0 0) (MkV3D 0 0 l),
+    rectangle mbottom (point-MkV3D 0 l2 0) (MkV3D l 0 0) (MkV3D 0 0 l),
     -- front
-    rectangle cfront  (point+MkV3D 0 0 l2) (MkV3D l 0 0) (MkV3D 0 l 0),
+    rectangle mfront  (point+MkV3D 0 0 l2) (MkV3D l 0 0) (MkV3D 0 l 0),
     -- back
-    rectangle cback   (point-MkV3D 0 0 l2) (MkV3D l 0 0) (MkV3D 0 (-l) 0),
+    rectangle mback   (point-MkV3D 0 0 l2) (MkV3D l 0 0) (MkV3D 0 (-l) 0),
     -- left
-    rectangle cleft   (point+MkV3D l2 0 0) (MkV3D 0 l 0) (MkV3D 0 0 l),
+    rectangle mleft   (point+MkV3D l2 0 0) (MkV3D 0 l 0) (MkV3D 0 0 l),
     -- right
-    rectangle cright  (point-MkV3D l2 0 0) (MkV3D 0 l 0) (MkV3D 0 0 (-l))]
+    rectangle mright  (point-MkV3D l2 0 0) (MkV3D 0 l 0) (MkV3D 0 0 (-l))]
 
-black, white :: PixelRGB8
-black   = PixelRGB8 0 0 0
-white   = PixelRGB8 255 255 255
-red     = PixelRGB8 255 0   0
-green   = PixelRGB8 0   255 0
-blue    = PixelRGB8 0   0   255
-magenta = PixelRGB8 255 0   255
-cyan    = PixelRGB8 0   255 255
-yellow  = PixelRGB8 255 255 0
-orange  = PixelRGB8 255 134 0
-orchid  = PixelRGB8 153 50  204
-aquamarine = PixelRGB8 69 139 116
-{-# INLINE black #-}
+-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+-- Color
+
+class Color c where
+  black,white,red,green,blue,magenta,cyan,yellow,orange,orchid,aquamarine :: c
+  
+
+instance Color PixelRGB8 where
+  black   = PixelRGB8 0 0 0
+  white   = PixelRGB8 255 255 255
+  red     = PixelRGB8 255 0   0
+  green   = PixelRGB8 0   255 0
+  blue    = PixelRGB8 0   0   255
+  magenta = PixelRGB8 255 0   255
+  cyan    = PixelRGB8 0   255 255
+  yellow  = PixelRGB8 255 255 0
+  orange  = PixelRGB8 255 134 0
+  orchid  = PixelRGB8 153 50  204
+  aquamarine = PixelRGB8 69 139 116
+
+instance Color Material where
+  black   = MkMaterial black black 1.0
+  white   = MkMaterial white white 1.0
+  red     = MkMaterial red   red   1.0
+  green   = MkMaterial green green 1.0
+  blue    = MkMaterial blue  blue  1.0
+  magenta = MkMaterial magenta magenta 1.0
+  cyan    = MkMaterial cyan    cyan    1.0
+  yellow  = MkMaterial yellow  yellow  1.0
+  orange  = MkMaterial orange  orange  1.0
+  orchid  = MkMaterial orchid  orchid  1.0
+  aquamarine = MkMaterial aquamarine aquamarine 1.0
+  {-# INLINE black #-}
 
 -- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 -- Triangle
 
-triangle :: PixelRGB8 -> Vector3D -> Vector3D -> Vector3D -> Shape
-triangle color pa pb pc =
+triangle :: Material -> Vector3D -> Vector3D -> Vector3D -> Shape
+triangle material pa pb pc =
   let u = pb - pa
       v = pc - pa
       h = u - scalar (u *@ v / v *@ v) v
@@ -215,7 +246,7 @@ triangle color pa pb pc =
       in (dh >= 0 && dw1 >= 0 && dh / hh + dw1 / ww1 <= 1) -- triangle ADB
          ||
          (dh >= 0 && dw2 >= 0 && dh / hh + dw2 / ww2 <= 1) -- triangle BDC
-    return (isect,normal,color)
+    return (isect,normal,material)
 
 
 -------------------------------------------------------------------------------
@@ -224,17 +255,19 @@ triangle color pa pb pc =
 data Light
   = MkLight
     {
-      light :: Vector3D -> Vector3D -> PixelRGB8 -> PixelRGB8
+      light :: Vector3D -> Vector3D -> Material -> Ray -> PixelRGB8
     }
 
 instance Monoid Light where
-  mempty = MkLight $ \_ _ _ -> black
+  mempty = MkLight $ \_ _ _ _ -> black
   {-# INLINE mempty #-}
-  mappend (MkLight l1) (MkLight l2) = MkLight $ \ipos inormal intensity ->
+  mappend (MkLight l1) (MkLight l2) = MkLight $ \ipos inormal intensity ray ->
      let clamp x y = if x + y < x then 255 else x + y
          addPixelRGB8 (PixelRGB8 r1 g1 b1) (PixelRGB8 r2 g2 b2) =
            PixelRGB8 (clamp r1 r2) (clamp g1 g2) (clamp b1 b2)
-     in l1 ipos inormal intensity `addPixelRGB8` l2 ipos inormal intensity
+     in l1 ipos inormal intensity ray
+        `addPixelRGB8`
+        l2 ipos inormal intensity ray
   {-# INLINE mappend #-}
 
 p2d :: Pixel8 -> Double
@@ -242,23 +275,36 @@ p2d i = fromInteger (toInteger i)
 {-# INLINE p2d #-}
 
 -- | Point light source
-pointLight :: Shape -> Double -> Vector3D -> Light
-pointLight world intensity position =
-  MkLight $ \ipos inormal (PixelRGB8 ir ig ib) ->
+pointLight :: Shape -> Double -> Double -> Vector3D -> Light
+pointLight world diffuse specular position =
+  MkLight $ \ipos inormal material ray ->
     let to_light = normalize (position - ipos)
+        (PixelRGB8 dr dg db) = mat_diffuse material
+        (PixelRGB8 sr sg sb) = mat_specular material
+        s = mat_specularity material
     in case isect world (MkRay (ipos + scalar 0.00001 to_light) to_light) of
       Just (ipos',_,_)
         | (position - ipos') *@ to_light >= 0 -> black
+          -- ^ check if ipos' is between light and ipos ??
       _ ->
-        let f = max 0 (to_light *@ inormal)
-            r = round $ f * p2d ir * intensity
-            g = round $ f * p2d ig * intensity
-            b = round $ f * p2d ib * intensity
+        -- note: properly reflection is 2 * (L.N) * N - L but here it's more
+        -- convenient to use its inverse.
+        let lndot = to_light *@ inormal
+            reflection' = to_light - scalar (2 * lndot) inormal
+            fDiffuse  = diffuse * max 0 lndot
+            fSpecular = 
+              if lndot <= 0 then
+                0
+              else
+                specular * (max 0 (reflection' *@ ray_direction ray)) ** s
+            r = round $ min 255 $ fDiffuse * p2d dr + fSpecular * p2d sr
+            g = round $ min 255 $ fDiffuse * p2d dg + fSpecular * p2d sg
+            b = round $ min 255 $ fDiffuse * p2d db + fSpecular * p2d sb
         in PixelRGB8 r g b
 
 -- | Ambient lighting
 ambient :: Double -> Light
-ambient f = MkLight $ \_ _ (PixelRGB8 ir ig ib) ->
+ambient f = MkLight $ \_ _ (MkMaterial (PixelRGB8 ir ig ib) _ _) _ ->
   let r = round $ f * p2d ir
       g = round $ f * p2d ig
       b = round $ f * p2d ib
@@ -309,9 +355,10 @@ fixedCamera width height =
 
 -- | Trace the ray generated at a given pixel position.
 trace :: Camera -> Light -> Shape -> Int -> Int -> PixelRGB8
-trace camera lights world x y = case isect world (cast camera x y) of
+trace camera lights world x y = case isect world ray of
   Nothing               -> black
-  Just (ipos,inormal,c) -> light lights ipos inormal c
+  Just (ipos,inormal,c) -> light lights ipos inormal c ray
+  where ray = cast camera x y
 {-# INLINE trace #-}
 
 -------------------------------------------------------------------------------
@@ -326,12 +373,13 @@ main :: IO ()
 main = 
   let trace' = parallelTrace w h (trace camera lights world)
       -- trace' = trace camera lights world
-      world  = cylinder 20 1 5 (MkV3D 0 (-2) (-10)) `mappend` axes
+      -- world  = cylinder 20 1 5 (MkV3D 0 (-2) (-10)) `mappend` axes
+      -- world  = stacked_cubes
       camera = fixedCamera w h
-      light  = pointLight world 0.7 (MkV3D 2 0 0)
-      light2 = pointLight world 0.3 (MkV3D 0 4 (-10))
-      lights = mconcat [light,light2,ambient 0.2]
-      colors = [red,green,blue,magenta,cyan,yellow,orange,orchid,aquamarine]
+      light  = pointLight world 0.03 0.2 (MkV3D 2 0 0)
+      light2 = pointLight world 0.3 0.5 (MkV3D 0 4 (-10))
+      -- lights = mconcat [light,light2,ambient 0.2]
+      (world,lights) = spec_test
       w      = 1024
       h      = 1024
   in saveBmpImage "trace.bmp" $ ImageRGB8 $ generateImage trace' w h
@@ -455,3 +503,15 @@ cylinder n h r point =
   in bot `mappend` top `mappend` mantle
      `mappend`
      rectangle cyan (MkV3D 0 0 (-16)) (MkV3D 20 0 0) (MkV3D 0 20 0)
+
+spec_test :: (Shape,Light)
+spec_test =
+  let world =
+        rectangle blue (MkV3D 0 (-2) 0) (MkV3D 20 0 0) (MkV3D 0 0 (-40))
+        `mappend`
+        rectangle blue (MkV3D 0 10   0) (MkV3D 20 0 0) (MkV3D 0 0 (-40))
+        `mappend`
+        rectangle white (MkV3D (-2) 0 (-4)) (MkV3D 0 6 0) (MkV3D 0 0 6)
+        `mappend`
+        rectangle white{mat_specularity=400} (MkV3D 2 0 (-4)) (MkV3D 0 0 6) (MkV3D 0 6 0)
+   in (world, pointLight world 0.3 0.6 (MkV3D 0 0 (-4)))
