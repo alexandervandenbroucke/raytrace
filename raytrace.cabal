@@ -19,9 +19,9 @@ executable raytrace
   main-is:             Main.hs
   -- other-modules:       
   -- other-extensions:
-  --  ghc-options:         -O2 -funbox-strict-fields -threaded
-  -- Repa suggested options
-  ghc-options:         -Odph -rtsopts -threaded -fno-liberate-case -funfolding-use-threshold1000 -funfolding-keeness-factor1000 -optlo-O3 -funbox-strict-fields
+  ghc-options:         -O2 -funbox-strict-fields -threaded -rtsopts
+  -- Repa suggested options (do not use until code-size is smaller)
+  -- ghc-options:         -Odph -rtsopts -threaded -fno-liberate-case -funfolding-use-threshold1000 -funfolding-keeness-factor1000 -optlo-O3 -funbox-strict-fields
   build-depends:       base >=4.8 && <4.9,
                        JuicyPixels, repa, mtl
   hs-source-dirs:      src
