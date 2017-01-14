@@ -373,13 +373,13 @@ main :: IO ()
 main = 
   let trace' = parallelTrace w h (trace camera lights world)
       -- trace' = trace camera lights world
-      -- world  = cylinder 20 1 5 (MkV3D 0 (-2) (-10)) `mappend` axes
+      world  = cylinder 20 1 5 (MkV3D 0 (-2) (-10)) `mappend` axes
       -- world  = stacked_cubes
       camera = fixedCamera w h
       light  = pointLight world 0.03 0.2 (MkV3D 2 0 0)
       light2 = pointLight world 0.3 0.5 (MkV3D 0 4 (-10))
-      -- lights = mconcat [light,light2,ambient 0.2]
-      (world,lights) = spec_test
+      lights = mconcat [light,light2,ambient 0.2]
+      -- (world,lights) = spec_test
       w      = 1024
       h      = 1024
   in saveBmpImage "trace.bmp" $ ImageRGB8 $ generateImage trace' w h
@@ -514,4 +514,8 @@ spec_test =
         rectangle white (MkV3D (-2) 0 (-4)) (MkV3D 0 6 0) (MkV3D 0 0 6)
         `mappend`
         rectangle white{mat_specularity=400} (MkV3D 2 0 (-4)) (MkV3D 0 0 6) (MkV3D 0 6 0)
-   in (world, pointLight world 0.3 0.6 (MkV3D 0 0 (-4)))
+      light =
+        pointLight world 0.3 0.6 (MkV3D 0 0 (-4))
+        `mappend`
+        pointLight world 0.0 1.0 (MkV3D (-3) 0 (-10))
+   in (world, light)
