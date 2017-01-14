@@ -62,9 +62,16 @@ data Ray
   = MkRay
     {
       ray_position  :: Vector3D,
-      ray_direction :: Vector3D
+      ray_direction :: Vector3D,
+      ray_recip     :: !Double
     }
   deriving Show
+
+-- | Smart constructor for 'Ray'.
+--   Takes a start position and a (normalised) direction as arguments.
+--   Make sure that the Z-component of the direction is non-zero!
+mkray :: Vector3D -> Vector3D -> Ray
+mkray position direction@(MkV3D _ _ z) = MkRay position direction (recip z)
 
 data Material
   = MkMaterial
@@ -91,10 +98,13 @@ instance Monoid Shape where
      in case (isect1,isect2) of
          (Nothing,_) -> isect2
          (_,Nothing) -> isect1
-         (Just (i1,_,_), Just (i2,_,_)) ->
-           let d1 = let d = ray_position ray - i1 in d *@ d
-               d2 = let d = ray_position ray - i2 in d *@ d
-           in if d1 <= d2 then isect1 else isect2
+         (Just (MkV3D _ _ i1,_,_), Just (MkV3D _ _ i2,_,_)) ->
+           let MkV3D _ _ pz = ray_position ray
+               rz = ray_recip ray
+               t1 = (i1 - pz) * rz
+               t2 = (i2 - pz) * rz
+           in if t1 <= t2 then isect1 else isect2
+  {-# INLINE mappend #-}
 
 -- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 -- Planes (rectangles)
@@ -282,7 +292,7 @@ pointLight world diffuse specular position =
         (PixelRGB8 dr dg db) = mat_diffuse material
         (PixelRGB8 sr sg sb) = mat_specular material
         s = mat_specularity material
-    in case isect world (MkRay (ipos + scalar 0.00001 to_light) to_light) of
+    in case isect world (mkray (ipos + scalar 0.00001 to_light) to_light) of
       Just (ipos',_,_)
         | (position - ipos') *@ to_light >= 0 -> black
           -- ^ check if ipos' is between light and ipos ??
@@ -348,7 +358,7 @@ fixedCamera width height =
         posY = scaleY * (fromIntegral screenY) + dY
         position  = MkV3D posX posY 0 -- camera is always at Z=0
         direction = normalize (MkV3D posX posY d)
-    in MkRay position direction
+    in mkray position direction
 
 -------------------------------------------------------------------------------
 -- Ray tracing
