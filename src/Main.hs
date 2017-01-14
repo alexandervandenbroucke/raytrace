@@ -17,6 +17,7 @@ import Control.Applicative (ZipList(..))
 -------------------------------------------------------------------------------
 -- Vector3D: 3 dimensional vector and operations
 
+-- | A datatype for double-precision 3 dimensional vectors.
 data Vector3D = MkV3D !Double !Double !Double deriving Show
 
 instance Num Vector3D where
@@ -32,32 +33,39 @@ instance Fractional Vector3D where
   recip (MkV3D x y z) = MkV3D (recip x) (recip y) (recip z)
   fromRational r = MkV3D r' r' r' where r' = fromRational r
 
--- inner product
+-- | Inner product
 (*@) :: Vector3D -> Vector3D -> Double
 MkV3D x1 y1 z1 *@ MkV3D x2 y2 z2 = x1*x2 + y1*y2 + z1*z2
 {-# INLINE (*@) #-}
 
--- outer product
+-- | Outer product
 (*#) :: Vector3D -> Vector3D -> Vector3D
 MkV3D x1 y1 z1 *# MkV3D x2 y2 z2 =
   MkV3D (y1*z2-z1*y2) (z1*x2-x1*z2) (x1*y2-x2*y1)
 {-# INLINE (*#) #-}
 
+-- | 2-norm (aka euclidian norm)
 norm :: Vector3D -> Double
 norm v = sqrt (v *@ v)
 {-# INLINE norm #-}
 
+-- | Normalise a 'Vector3D'.
 normalize :: Vector3D -> Vector3D
 normalize v@(MkV3D x y z) = MkV3D (x / n) (y/n) (z/n) where
   n = norm v
 {-# INLINE normalize #-}
 
+-- | Multiply a 'Vector3D' with a scalar value.
 scalar :: Double -> Vector3D -> Vector3D
 scalar d (MkV3D x y z) = MkV3D (d*x) (d*y) (d*z)
 {-# INLINE scalar #-}
 
 -------------------------------------------------------------------------------
 -- Shape: shapes
+
+-- | Ray are formally half-lines with a given start position and direction.
+--   This implementation also caches the reciprocal of the Z-component of
+--   the direction.
 data Ray
   = MkRay
     {
@@ -73,6 +81,8 @@ data Ray
 mkray :: Vector3D -> Vector3D -> Ray
 mkray position direction@(MkV3D _ _ z) = MkRay position direction (recip z)
 
+-- | Materials specify the diffuse and specular reflexivity as well as the
+--   specularity (shinyness) of a 'Shape'.
 data Material
   = MkMaterial
     {
@@ -81,15 +91,20 @@ data Material
       mat_specularity :: !Double
     }
 
-nonSpecular :: PixelRGB8 -> Material
-nonSpecular diffuse = MkMaterial diffuse black 1.0
-
+-- | A 'Shape' is something that can test for intersection with a 'Ray'.
+--   When there is an intersection 'Just' a tuple of the intersection postion,
+--   surface normal at this position and the material at that position is
+--   returned.
 newtype Shape
   = MkShape
     {
       isect :: Ray -> Maybe (Vector3D,Vector3D,Material)
     }
 
+-- | Shapes are monoids.
+--   The empty element is a 'Shape' that does not interesect any 'Ray'.
+--   The @mappend@ of two 'Shape's is a 'Shape' that returns the interesection
+--   that is closest.
 instance Monoid Shape where
   mempty  = MkShape $ \_ -> Nothing
   r1 `mappend` r2 = MkShape $ \ray -> 
@@ -109,7 +124,8 @@ instance Monoid Shape where
 -- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 -- Planes (rectangles)
 
--- | Takes a material, position, width and height and creates the corresponding
+-- | Create a rectangle.
+--   Takes a material, position, width and height and creates the corresponding
 --   3D rectangle. Width and height must be orthogonal.
 rectangle :: Material -> Vector3D -> Vector3D -> Vector3D -> Shape
 rectangle material point width height =
@@ -131,6 +147,9 @@ rectangle material point width height =
         in 0 <= dw && dw <= ww && 0 <= dh && dh <= hh
       return (isect, normal, material)
 
+-- | Helper function to decide if a line intersects a plane.
+--   Takes the normal of the plane, it's "d" component, a point on the line
+--   and the direcition of the line.
 planeLineIsect :: Vector3D -> Double -> Vector3D -> Vector3D -> Maybe Vector3D
 planeLineIsect normal d line_position line_dir =
   let MkV3D a  b  c  = normal
@@ -151,6 +170,7 @@ planeLineIsect normal d line_position line_dir =
      else
        planeLineIsect' normal d line_position line_dir
 
+-- | Helper for 'planeLineIsect'
 planeLineIsect' :: Vector3D -> Double -> Vector3D -> Vector3D -> Maybe Vector3D
 planeLineIsect' normal d line_position line_dir = 
   let MkV3D a  b  c  = normal
@@ -171,11 +191,15 @@ planeLineIsect' normal d line_position line_dir =
 -- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 -- Cubes
 
+-- | A cube consiting of a single material
+--   Takes a the material, a position vector and the size of a side.
 cube :: Material -> Vector3D -> Double -> Shape
 cube material point l = colorcube [material] point l
 
+-- | A cube where every side has a different material.
+--   The list of materials must be non-empty.
 colorcube :: [Material] -> Vector3D -> Double -> Shape
-colorcube [] _ _ = error "colorcube: list of colors must not be empty."
+colorcube [] _ _ = error "colorcube: list of materials must not be empty."
 colorcube materials point l =
   let [mtop,mbottom,mfront,mback,mleft,mright] = take 6 $ cycle materials
       l2 = l / 2
@@ -196,6 +220,7 @@ colorcube materials point l =
 -- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 -- Color
 
+-- | A class abstracting over color names.
 class Color c where
   black,white,red,green,blue,magenta,cyan,yellow,orange,orchid,aquamarine :: c
   
@@ -230,6 +255,9 @@ instance Color Material where
 -- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 -- Triangle
 
+-- | A triangle.
+--   The triangle is identified by 3 points.
+--   No corner of the triangle must exceed 90 degrees.
 triangle :: Material -> Vector3D -> Vector3D -> Vector3D -> Shape
 triangle material pa pb pc =
   let u = pb - pa
@@ -262,12 +290,18 @@ triangle material pa pb pc =
 -------------------------------------------------------------------------------
 -- Lights
 
+-- | A light shades a pixel according to the position, normal and material of
+--   the surface under the normal, as well as the 'Ray' that intersected it.
 data Light
   = MkLight
     {
       light :: Vector3D -> Vector3D -> Material -> Ray -> PixelRGB8
     }
 
+-- | Lights are monoids.
+--   The empty light contributes no shade to a pixel.
+--   The 'mappend' of two lights is simply the sum of their contribution,
+--   clamped to the maximal color value.
 instance Monoid Light where
   mempty = MkLight $ \_ _ _ _ -> black
   {-# INLINE mempty #-}
@@ -280,11 +314,14 @@ instance Monoid Light where
         l2 ipos inormal intensity ray
   {-# INLINE mappend #-}
 
+-- | Helper function to convert a 'Pixel8' to a Double
 p2d :: Pixel8 -> Double
 p2d i = fromInteger (toInteger i)
 {-# INLINE p2d #-}
 
--- | Point light source
+-- | Point light source.
+--   Takes the world ('Shape'), a diffuse and specular intensity and a
+--   position.
 pointLight :: Shape -> Double -> Double -> Vector3D -> Light
 pointLight world diffuse specular position =
   MkLight $ \ipos inormal material ray ->
@@ -312,7 +349,7 @@ pointLight world diffuse specular position =
             b = round $ min 255 $ fDiffuse * p2d db + fSpecular * p2d sb
         in PixelRGB8 r g b
 
--- | Ambient lighting
+-- | Ambient light, simply contributes a given intensity to every pixel.
 ambient :: Double -> Light
 ambient f = MkLight $ \_ _ (MkMaterial (PixelRGB8 ir ig ib) _ _) _ ->
   let r = round $ f * p2d ir
@@ -323,6 +360,7 @@ ambient f = MkLight $ \_ _ (MkMaterial (PixelRGB8 ir ig ib) _ _) _ ->
 -------------------------------------------------------------------------------
 -- Camera: casts (creates) rays.
 
+-- | A camera generates 'Ray's for every pixel.
 data Camera
   = MkCamera
     {
