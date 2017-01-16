@@ -191,7 +191,7 @@ planeLineIsect' normal d line_position line_dir =
 -- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 -- Cubes
 
--- | A cube consiting of a single material
+-- | A cube consisting of a single material
 --   Takes a the material, a position vector and the size of a side.
 cube :: Material -> Vector3D -> Double -> Shape
 cube material point l = colorcube [material] point l
@@ -199,23 +199,35 @@ cube material point l = colorcube [material] point l
 -- | A cube where every side has a different material.
 --   The list of materials must be non-empty.
 colorcube :: [Material] -> Vector3D -> Double -> Shape
-colorcube [] _ _ = error "colorcube: list of materials must not be empty."
-colorcube materials point l =
+colorcube materials point l = colorcuboid materials point l l l
+
+-- | A cuboid consisting of a single material
+--   Takes a the material, a position vector, length, height and depth.
+cuboid :: Material -> Vector3D -> Double -> Double -> Double -> Shape
+cuboid material point l h d = colorcuboid [material] point l h d
+
+-- | A cube where every side has a different material.
+--   The list of materials must be non-empty.
+colorcuboid :: [Material] -> Vector3D -> Double -> Double -> Double -> Shape
+colorcuboid [] _ _ _ _ = error "colorcuboid: list of materials must not be empty."
+colorcuboid materials point l h d =
   let [mtop,mbottom,mfront,mback,mleft,mright] = take 6 $ cycle materials
       l2 = l / 2
+      h2 = h / 2
+      d2 = d / 2
   in mconcat [
     -- top
-    rectangle mtop    (point+MkV3D 0 l2 0) (MkV3D l 0 0) (MkV3D 0 0 (-l)),
+    rectangle mtop    (point+MkV3D 0 h2 0) (MkV3D l 0 0) (MkV3D 0 0 (-d)),
     -- bottom
-    rectangle mbottom (point-MkV3D 0 l2 0) (MkV3D l 0 0) (MkV3D 0 0 l),
+    rectangle mbottom (point-MkV3D 0 h2 0) (MkV3D l 0 0) (MkV3D 0 0 d),
     -- front
-    rectangle mfront  (point+MkV3D 0 0 l2) (MkV3D l 0 0) (MkV3D 0 l 0),
+    rectangle mfront  (point+MkV3D 0 0 d2) (MkV3D l 0 0) (MkV3D 0 h 0),
     -- back
-    rectangle mback   (point-MkV3D 0 0 l2) (MkV3D l 0 0) (MkV3D 0 (-l) 0),
+    rectangle mback   (point-MkV3D 0 0 d2) (MkV3D l 0 0) (MkV3D 0 (-h) 0),
     -- left
-    rectangle mleft   (point+MkV3D l2 0 0) (MkV3D 0 l 0) (MkV3D 0 0 l),
+    rectangle mleft   (point+MkV3D l2 0 0) (MkV3D 0 h 0) (MkV3D 0 0 d),
     -- right
-    rectangle mright  (point-MkV3D l2 0 0) (MkV3D 0 l 0) (MkV3D 0 0 (-l))]
+    rectangle mright  (point-MkV3D l2 0 0) (MkV3D 0 h 0) (MkV3D 0 0 (-d))]
 
 -- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 -- Color
@@ -421,13 +433,21 @@ main :: IO ()
 main = 
   let trace' = parallelTrace w h (trace camera lights world)
       -- trace' = trace camera lights world
-      world  = cylinder 20 1 5 (MkV3D 0 (-2) (-10)) `mappend` axes
+      -- world  = cylinder 20 1 5 (MkV3D 0 (-2) (-10)) `mappend` axes
       -- world  = stacked_cubes
       camera = fixedCamera w h
       light  = pointLight world 0.03 0.2 (MkV3D 2 0 0)
-      light2 = pointLight world 0.3 0.5 (MkV3D 0 4 (-10))
-      lights = mconcat [light,light2,ambient 0.2]
+      light2 = pointLight world 0.3 1.0 (MkV3D 0 4 (-10))
+      -- lights = mconcat [light,light2,ambient 0.2]
       -- (world,lights) = spec_test
+      (world,lights) =
+        tree (MkV3D (-2) (-1) (-4))
+        `mappend`
+        tree  (MkV3D (-1) (-1) (-6))
+        `mappend`
+        tree  (MkV3D 1 (-1) (-2))
+        `mappend`
+        (rectangle white (MkV3D 0 (-1) (-4)) (MkV3D 10 0 0) (MkV3D 0 0 10),mempty)
       w      = 1024
       h      = 1024
   in saveBmpImage "trace.bmp" $ ImageRGB8 $ generateImage trace' w h
@@ -567,3 +587,50 @@ spec_test =
         `mappend`
         pointLight world 0.0 1.0 (MkV3D (-3) 0 (-10))
    in (world, light)
+
+tree :: Vector3D -> (Shape,Light)
+tree point =
+  let p0 = point + MkV3D 0 0.35 0
+      pyramid c p b h =
+        let b2 = b / 2
+            top        = p + MkV3D 0     h 0
+            frontLeft  = p + MkV3D (-b2) 0 b2
+            frontRight = p + MkV3D b2    0 b2
+            backRight  = p + MkV3D b2    0 (-b2)
+            backLeft   = p + MkV3D (-b2) 0 (-b2)
+        in mconcat [
+          --front
+          triangle c top frontLeft frontRight,
+          -- left
+          triangle c top backLeft frontLeft,
+          -- right
+          triangle c top frontRight backRight,
+          -- back
+          triangle c top backRight backLeft]
+      darkgreen =
+        MkMaterial
+        { 
+          mat_diffuse  = PixelRGB8 0 50 0,
+          mat_specular = PixelRGB8 0 50 0,
+          mat_specularity = 1.0
+        }
+      darkbrown =
+        MkMaterial
+        { 
+          mat_diffuse  = PixelRGB8 50 50 0,
+          mat_specular = PixelRGB8 50 50 0,
+          mat_specularity = 1.0
+        }
+      specwhite = white{mat_diffuse = PixelRGB8 10 10 10,mat_specularity=0.1}
+      world =
+        mconcat [ pyramid darkgreen (p0 + MkV3D 0 (0.1*y) 0) (1.0 - 0.1*y) 1
+                | y <- [0..4.0] ]
+        `mappend`
+        pyramid specwhite (p0 + MkV3D 0 0.5 0) 0.5 1
+        `mappend`
+        cuboid darkbrown (p0-MkV3D 0 0.35 0) 0.5 0.7 0.5
+      light =
+        pointLight world 0.3 0.6 (p0 + MkV3D 0 2 2)
+        `mappend`
+        ambient 0.5
+  in (world,light)
