@@ -1,3 +1,8 @@
+{- | A simple raytracer.
+
+     Author: Alexander Vandenbroucke <alexander.vandenbroucke@gmail.com>
+-}
+
 {-# LANGUAGE BangPatterns #-}
 
 module Main where
