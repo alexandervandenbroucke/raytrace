@@ -419,21 +419,25 @@ main :: IO ()
 main = 
   let trace' = parallelTrace w h (trace camera lights world)
       -- trace' = trace camera lights world
-      -- world  = cylinder 20 1 5 (MkV3D 0 (-2) (-10)) `mappend` axes
+      -- world  = cylinder blue blue green (MkV3D 0 (-2) (-10)) 20 1 5  `mappend` axes
       -- world  = stacked_cubes
+      -- world = triangle_example
+      -- world = cubes
       camera = fixedCamera w h
       light  = pointLight world 0.03 0.2 (MkV3D 2 0 0)
       light2 = pointLight world 0.3 1.0 (MkV3D 0 4 (-10))
       -- lights = mconcat [light,light2,ambient 0.2]
-      -- (world,lights) = spec_test
-      (world,lights) =
+      -- (world,_) = spec_test
+      world =
         tree (MkV3D (-2) (-1) (-4))
         `mappend`
         tree  (MkV3D (-1) (-1) (-6))
         `mappend`
         tree  (MkV3D 1 (-1) (-2))
         `mappend`
-        (rectangle white (MkV3D 0 (-1) (-4)) (MkV3D 10 0 0) (MkV3D 0 0 10),mempty)
+        rectangle white (MkV3D 0 (-1) (-4)) (MkV3D 0 0 10) (MkV3D 10 0 0)
+      lights = mconcat [pointLight world 0.8 0.8 (MkV3D 0 100 0), ambient 0.5]
+      -- (world,lights) = intersection
       w      = 1024
       h      = 1024
   in saveBmpImage "trace.bmp" $ ImageRGB8 $ generateImage trace' w h
@@ -522,41 +526,51 @@ triangle_example =
   `mappend`
   rectangle blue (MkV3D 0 (-2) 0) (MkV3D 20 0 0) (MkV3D 0 0 (-40))
 
-cylinder :: Int -> Double -> Double -> Vector3D -> Shape
-cylinder n h r point =
+cylinder :: Material -> Material -> Material
+         -> Vector3D -> Int -> Double -> Double -> Shape
+cylinder topM botM mantleM point n h r  =
   let points =
         [ (r*cos (i*alpha),r*sin (i*alpha)) | i <- [0..(n'-1)]] ++ [(r,0)]
-      topPoints    = ZipList [point + MkV3D x h z     | (x,z) <- points]
-      botPoints    = ZipList [point + MkV3D x 0 z     | (x,z) <- points]
-      mantlePoints = ZipList [point + MkV3D x (h/2) z | (x,z) <- points]
+      topPoints    = ZipList [point + MkV3D x   h2  z | (x,z) <- points]
+      botPoints    = ZipList [point + MkV3D x (-h2) z | (x,z) <- points]
+      mantlePoints = ZipList [point + MkV3D x   0   z | (x,z) <- points]
       normals      = ZipList [MkV3D (x/r) 0 (z/r)     | (x,z) <- points]
-      topPoint = point + MkV3D 0 h 0
+      topPoint = point + MkV3D 0   h2  0
+      botPoint = point - MkV3D 0 (-h2) 0
       alpha    = 2*pi/n'
+      h2       = h / 2
       n'       = fromInteger (toInteger n)
       tailZL    = ZipList . tail . getZipList
       mconcatZL = mconcat . getZipList
       --
-      top = mconcatZL $ triangle blue topPoint <$> tailZL topPoints <*> topPoints
-      bot = mconcatZL $ triangle red  point    <$> botPoints <*> tailZL botPoints
-      mantle = mconcatZL
-               $   mantleRect
-               <$> mantlePoints
-               <*> tailZL mantlePoints
-               <*> normals
-               <*> tailZL normals
+      top =
+        mconcatZL
+        $ triangle topM topPoint
+        <$> tailZL topPoints
+        <*> topPoints
+      bot =
+        mconcatZL
+        $ triangle botM  botPoint
+        <$> botPoints
+        <*> tailZL botPoints
+      mantle =
+        mconcatZL
+        $ mantleRect
+        <$> mantlePoints
+        <*> tailZL mantlePoints
+        <*> normals
+        <*> tailZL normals
       mantleRect p1 p2 n1 n2 =
         let p  = scalar (0.5) (p1 + p2)
             dP = p1 - p2 -- aka the width of this piece
             dN = n1 - n2
             dNdP  = dN / dP
         in MkShape $ \ray -> do
-          (i,_,color) <- isect (rectangle green p dP (MkV3D 0 h 0)) ray
+          (i,_,color) <- isect (rectangle mantleM p dP (MkV3D 0 h 0)) ray
           let MkV3D nx _ nz = n2 + (i - p2) * dNdP
               -- linearly interpolated normal
           return (i, MkV3D nx 0 nz, color)
   in bot `mappend` top `mappend` mantle
-     `mappend`
-     rectangle cyan (MkV3D 0 0 (-16)) (MkV3D 20 0 0) (MkV3D 0 20 0)
 
 spec_test :: (Shape,Light)
 spec_test =
@@ -567,14 +581,23 @@ spec_test =
         `mappend`
         rectangle white (MkV3D (-2) 0 (-4)) (MkV3D 0 6 0) (MkV3D 0 0 6)
         `mappend`
-        rectangle white{mat_specularity=400} (MkV3D 2 0 (-4)) (MkV3D 0 0 6) (MkV3D 0 6 0)
+        rectangle white{mat_specularity=400} (MkV3D 2 0 (-4)) (MkV3D (-0.5) 0 6) (MkV3D 0 6 0)
       light =
         pointLight world 0.3 0.6 (MkV3D 0 0 (-4))
         `mappend`
         pointLight world 0.0 1.0 (MkV3D (-3) 0 (-10))
    in (world, light)
 
-tree :: Vector3D -> (Shape,Light)
+intersection :: (Shape,Light)
+intersection =
+  let world =
+        cylinder red red red (MkV3D 0 (-1) (-3)) 20 2 0.02
+        `mappend`
+        rectangle orange (MkV3D 0 (-1) (-3)) (MkV3D 1 0 1) (MkV3D 2 0 (-2))
+      light = ambient 0.5 `mappend` pointLight world 0.5 0.2 (MkV3D 1 1 (-3))
+  in (world,light)
+
+tree :: Vector3D -> Shape
 tree point =
   let p0 = point + MkV3D 0 0.35 0
       pyramid c p b h =
@@ -597,7 +620,7 @@ tree point =
         MkMaterial
         { 
           mat_diffuse  = PixelRGB8 0 50 0,
-          mat_specular = PixelRGB8 0 50 0,
+          mat_specular = PixelRGB8 0 0 0,
           mat_specularity = 1.0
         }
       darkbrown =
@@ -607,16 +630,13 @@ tree point =
           mat_specular = PixelRGB8 50 50 0,
           mat_specularity = 1.0
         }
-      specwhite = white{mat_diffuse = PixelRGB8 10 10 10,mat_specularity=0.1}
+      specwhite = white{mat_diffuse = PixelRGB8 100 100 100,mat_specularity=100}
       world =
         mconcat [ pyramid darkgreen (p0 + MkV3D 0 (0.1*y) 0) (1.0 - 0.1*y) 1
                 | y <- [0..4.0] ]
         `mappend`
         pyramid specwhite (p0 + MkV3D 0 0.5 0) 0.5 1
         `mappend`
-        cuboid darkbrown (p0-MkV3D 0 0.35 0) 0.5 0.7 0.5
-      light =
-        pointLight world 0.3 0.6 (p0 + MkV3D 0 2 2)
-        `mappend`
-        ambient 0.5
-  in (world,light)
+        -- cuboid darkbrown (p0-MkV3D 0 0.35 0) 0.5 0.7 0.5
+        cylinder black black darkbrown (p0-MkV3D 0 0.35 0) 12 0.7 0.25
+  in world
