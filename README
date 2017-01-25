@@ -1,0 +1,38 @@
+A simple raytracer
+==================
+
+# Source files
+
+  - src/Talk.hs: the source code used during the talk I gave at the Leuven
+    Haskell Users' Group
+  - src/Main.hs: the source code of the more extensive engine.
+
+# Features
+
+  - rectangles
+  - triangles
+  - upright cylinders
+  - cuboids
+  - diffuse and specular lighting
+
+# Compiling & Installing
+
+This project provides a .cabal file, so building is exceedingly easy:
+
+$ cabal install --only-dependencies
+$ cabal build
+
+# Usage
+
+The raytracer always writes its output to trace.bmp. 
+Change the world and lights variables in the main function to select the
+scene you want to render, then run:
+
+$ cabal run; open trace.bmp
+
+This will run the raytracer and then open the trace.bmp file.
+To use multiple cores, it is suggested that you use:
+
+$ cabal run -- +RTS -N4; open trace.bmp
+
+This tells the Haskell Runtime System to use multiple core (4 here).
