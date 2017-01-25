@@ -82,7 +82,8 @@ data Ray
 
 -- | Smart constructor for 'Ray'.
 --   Takes a start position and a (normalised) direction as arguments.
---   Make sure that the Z-component of the direction is non-zero!
+--   This constructor ensures that the absolute values of all components of the
+--   direction are at least 2.2*(10**(-308)) and therefore non-zero.
 mkray :: Vector3D -> Vector3D -> Ray
 mkray position direction@(MkV3D x y z) =
   let x' = clamp x
@@ -96,7 +97,7 @@ mkray position direction@(MkV3D x y z) =
 -- | Given a 'Ray' and a point along the ray, return the distance travelled.
 --   More  precisely, given ray @r@ and point @p@ return t such that
 --
---     @ ray_position r + t * ray_direction r = p
+--     @ ray_position r + t * ray_direction r = p @
 --
 rayDistance :: Ray -> Vector3D -> Double
 rayDistance r (MkV3D _ _ pz) =
@@ -104,7 +105,7 @@ rayDistance r (MkV3D _ _ pz) =
   in (pz - z) * ray_recip r
 {-# INLINE rayDistance #-}
 
---   A tuple of the intersection postion, surface normal at this position,
+-- | A 4-tuple of the intersection postion, surface normal at this position,
 --   the distance along the ray and the material at that position is returned.
 type Intersection = (Vector3D,Vector3D,Double,Material)
 
@@ -441,15 +442,13 @@ main =
       light  = pointLight world 0.03 0.2 (MkV3D 2 0 0)
       light2 = pointLight world 0.3 1.0 (MkV3D 0 4 (-10))
       -- lights = mconcat [light,light2,ambient 0.2]
-      -- (world,_) = spec_test
-      world =
-        tree (MkV3D (-2) (-1) (-4))
-        `mappend`
-        tree  (MkV3D (-1) (-1) (-6))
-        `mappend`
-        tree  (MkV3D 1 (-1) (-2))
-        `mappend`
-        rectangle white (MkV3D 0 (-1) (-4)) (MkV3D 0 0 10) (MkV3D 10 0 0)
+      -- (world,lights) = spec_test
+      -- (world,lights) = intersection
+      world = mconcat [
+        tree (MkV3D (-2) (-1) (-4)),
+        tree  (MkV3D (-1) (-1) (-6)),
+        tree  (MkV3D 1 (-1) (-2)),
+        rectangle white (MkV3D 0 (-1) (-4)) (MkV3D 0 0 10) (MkV3D 10 0 0)]
       lights = mconcat [pointLight world 0.8 0.8 (MkV3D 0 100 0), ambient 0.5]
       -- (world,lights) = intersection
       w      = 1024
@@ -492,53 +491,46 @@ axes = mconcat [
 
 
 cubes =
-  let colors = [red,green,blue,magenta,cyan,aquamarine,yellow,orange,orchid]
-  in colorcube colors (MkV3D (-2) 0 (-6)) 1
-     `mappend`
-     colorcube colors (MkV3D 0 (-2) (-6)) 1
-     `mappend`
-     colorcube colors (MkV3D 2 0 (-6)) 1
-     `mappend`
-     colorcube colors (MkV3D 0 2 (-6)) 1
-     `mappend`
-     colorcube colors (MkV3D 0 0 (-6)) 1
+  mconcat [ 
+    colorcube colors (MkV3D (-2) 0 (-6)) 1,
+    colorcube colors (MkV3D 0 (-2) (-6)) 1,
+    colorcube colors (MkV3D 2 0    (-6)) 1,
+    colorcube colors (MkV3D 0 2    (-6)) 1,
+    colorcube colors (MkV3D 0 0    (-6)) 1]
+  where colors = [red,green,blue,magenta,cyan,aquamarine,yellow,orange,orchid]
 
 stacked_cubes =
-  let colors = [red,green,yellow]
-  in rectangle blue (MkV3D 0 (-2) 0) (MkV3D 20 0 0) (MkV3D 0 0 (-40))
-     `mappend`
-     rectangle blue (MkV3D 0 (4.5) 0) (MkV3D 20 0 0) (MkV3D 0 0 (40))
-     `mappend`
-     colorcube colors (MkV3D (-2) (-1.5) (-6)) 1
-     `mappend`
-     colorcube [white] (MkV3D 0 4.2 (-10)) 0.1
-     `mappend`
-     colorcube [white] (MkV3D 0 3.8 (-10)) 0.1
-     `mappend`
-     rectangle green (MkV3D (-0.2) 4 (-10))   (MkV3D 0 (-0.5) 0) (MkV3D 0 0 (-0.3))
-     `mappend`
-     rectangle green (MkV3D (0.2)  4 (-10))   (MkV3D 0 (-0.5) 0) (MkV3D 0 0 0.3)
-     `mappend`
-     rectangle green (MkV3D 0      4 (-9.8))  (MkV3D 0 0.5    0) (MkV3D 0.3 0 0)
-     `mappend`
-     rectangle green (MkV3D 0      4 (-10.2)) (MkV3D 0 (-0.5) 0) (MkV3D 0.3 0 0)
-     `mappend`
-     rectangle orange (MkV3D 2.2 (-0.5) (-10)) (MkV3D 0 12 0) (MkV3D (-5) 0 (-10))
+  mconcat [
+    -- floor
+    rectangle blue (MkV3D 0 (-2) 0) (MkV3D 20 0 0) (MkV3D 0 0 (-40)),
+    -- ceiling
+    rectangle blue (MkV3D 0 (4.5) 0) (MkV3D 20 0 0) (MkV3D 0 0 (40)),
+    -- cube
+    colorcube colors (MkV3D (-2) (-1.5) (-6)) 1,
+    -- light housing
+    cube white (MkV3D 0 4.2 (-10)) 0.1,
+    cube white (MkV3D 0 3.8 (-10)) 0.1,
+    rectangle green (MkV3D (-0.2) 4 (-10))   (MkV3D 0 (-0.5) 0) (MkV3D 0 0 (-0.3)),
+    rectangle green (MkV3D (0.2)  4 (-10))   (MkV3D 0 (-0.5) 0) (MkV3D 0 0 0.3),
+    rectangle green (MkV3D 0      4 (-9.8))  (MkV3D 0 0.5    0) (MkV3D 0.3 0 0),
+    rectangle green (MkV3D 0      4 (-10.2)) (MkV3D 0 (-0.5) 0) (MkV3D 0.3 0 0),
+    -- wall
+    rectangle orange (MkV3D 2.2 (-0.5) (-10)) (MkV3D 0 12 0) (MkV3D (-5) 0 (-10))]
+  where colors = [red,green,yellow]
 
 triangle_example =
-  rectangle cyan (MkV3D 0 0 (-10)) (MkV3D 4.0 0 0) (MkV3D 0 4.0 0)
-  `mappend`
-  rectangle cyan (MkV3D (-3) 0 (-9)) (MkV3D (2.0) 0 (-2.0)) (MkV3D 0 4.0 0)
-  `mappend`
-  rectangle cyan (MkV3D 3 0 (-9)) (MkV3D (2.0) 0 (2.0)) (MkV3D 0 4.0 0)
-  `mappend`
-  cube yellow (MkV3D 0 (-1.5) (-5)) 1.0
-  `mappend`
-  triangle orange (MkV3D 0 1 (-4)) (MkV3D (-1) 0  (-4)) (MkV3D 1 0  (-4))
-  `mappend`
-  rectangle green (MkV3D 0 0 (-3)) (MkV3D 1 0 0) (MkV3D 0 1 0)
-  `mappend`
-  rectangle blue (MkV3D 0 (-2) 0) (MkV3D 20 0 0) (MkV3D 0 0 (-40))
+  mconcat [
+    -- background piece
+    rectangle cyan (MkV3D 0    0 (-10)) (MkV3D 4.0   0    0)    (MkV3D 0 4.0 0),
+    rectangle cyan (MkV3D (-3) 0 (-9))  (MkV3D (2.0) 0  (-2.0)) (MkV3D 0 4.0 0),
+    rectangle cyan (MkV3D   3  0 (-9))  (MkV3D (2.0) 0  (2.0))  (MkV3D 0 4.0 0),
+    -- yellow cube
+    cube yellow (MkV3D 0 (-1.5) (-5)) 1.0,
+    -- triangle
+    triangle orange (MkV3D 0 1 (-4)) (MkV3D (-1) 0  (-4)) (MkV3D 1 0  (-4)),
+    -- other things
+    rectangle green (MkV3D 0 0 (-3)) (MkV3D 1 0 0)  (MkV3D 0 1 0),
+    rectangle blue  (MkV3D 0 (-2) 0) (MkV3D 20 0 0) (MkV3D 0 0 (-40))]
 
 cylinder :: Material -> Material -> Material
          -> Vector3D -> Int -> Double -> Double -> Shape
@@ -574,6 +566,7 @@ cylinder topM botM mantleM point n h r  =
         <*> tailZL mantlePoints
         <*> normals
         <*> tailZL normals
+      -- a special rectangle that has interpolated normals
       mantleRect p1 p2 n1 n2 =
         let p  = scalar (0.5) (p1 + p2)
             dP = p1 - p2 -- aka the width of this piece
@@ -588,26 +581,24 @@ cylinder topM botM mantleM point n h r  =
 
 spec_test :: (Shape,Light)
 spec_test =
-  let world =
-        rectangle blue (MkV3D 0 (-2) 0) (MkV3D 20 0 0) (MkV3D 0 0 (-40))
-        `mappend`
-        rectangle blue (MkV3D 0 10   0) (MkV3D 20 0 0) (MkV3D 0 0 (-40))
-        `mappend`
-        rectangle white (MkV3D (-2) 0 (-4)) (MkV3D 0 6 0) (MkV3D 0 0 6)
-        `mappend`
-        rectangle white{mat_specularity=400} (MkV3D 2 0 (-4)) (MkV3D (-0.5) 0 6) (MkV3D 0 6 0)
+  let world = mconcat [
+        rectangle blue       (MkV3D 0   (-2) 0)  (MkV3D 20 0 0)     (MkV3D 0 0 (-40)),
+        rectangle blue       (MkV3D 0    10  0)  (MkV3D 20 0 0)     (MkV3D 0 0 (-40)),
+        rectangle white      (MkV3D (-2) 0 (-4)) (MkV3D 0 6 0)      (MkV3D 0 0 6),
+        rectangle spec_white (MkV3D 2    0 (-4)) (MkV3D (-0.5) 0 6) (MkV3D 0 6 0)]
       light =
         pointLight world 0.3 0.6 (MkV3D 0 0 (-4))
         `mappend`
         pointLight world 0.0 1.0 (MkV3D (-3) 0 (-10))
+      spec_white = white{mat_specularity=400} 
    in (world, light)
 
 intersection :: (Shape,Light)
 intersection =
-  let world =
-        cylinder red red red (MkV3D 0 (-1) (-3)) 20 2 0.02
-        `mappend`
-        rectangle orange (MkV3D 0 (-1) (-3)) (MkV3D 1 0 1) (MkV3D 2 0 (-2))
+  let world = mconcat [
+        cylinder red red red (MkV3D 0 (-1) (-3)) 20 2 0.02,
+        rectangle orange (MkV3D 0 (-1) (-3)) (MkV3D 1 0 1) (MkV3D 2 0 (-2))]
+      --
       light = ambient 0.5 `mappend` pointLight world 0.5 0.2 (MkV3D 1 1 (-3))
   in (world,light)
 
@@ -645,12 +636,9 @@ tree point =
           mat_specularity = 1.0
         }
       specwhite = white{mat_diffuse = PixelRGB8 100 100 100,mat_specularity=100}
-      world =
-        mconcat [ pyramid darkgreen (p0 + MkV3D 0 (0.1*y) 0) (1.0 - 0.1*y) 1
-                | y <- [0..4.0] ]
-        `mappend`
-        pyramid specwhite (p0 + MkV3D 0 0.5 0) 0.5 1
-        `mappend`
-        -- cuboid darkbrown (p0-MkV3D 0 0.35 0) 0.5 0.7 0.5
-        cylinder black black darkbrown (p0-MkV3D 0 0.35 0) 12 0.7 0.25
-  in world
+  in mconcat [
+    mconcat [ pyramid darkgreen (p0 + MkV3D 0 (0.1*y) 0) (1.0 - 0.1*y) 1
+            | y <- [0..4.0] ],
+    pyramid specwhite (p0 + MkV3D 0 0.5 0) 0.5 1,
+    -- cuboid darkbrown (p0-MkV3D 0 0.35 0) 0.5 0.7 0.5]
+    cylinder black black darkbrown (p0-MkV3D 0 0.35 0) 12 0.7 0.25]
