@@ -138,7 +138,7 @@ instance Monoid Shape where
      in case (isect1,isect2) of
          (Nothing,_) -> isect2
          (_,Nothing) -> isect1
-         (Just (i1,_,t1,_), Just (i2,_,t2,_)) ->
+         (Just (_,_,t1,_), Just (_,_,t2,_)) ->
            if t1 <= t2 then isect1 else isect2
   {-# INLINE mappend #-}
 
@@ -303,8 +303,8 @@ triangle material pa pb pc =
 -------------------------------------------------------------------------------
 -- Lights
 
--- | A light shades a pixel according to the position, normal and material of
---   the surface under the normal, as well as the 'Ray' that intersected it.
+-- | A light shades a pixel according to the intersection with the shape, as
+--   well as the 'Ray' that intersected it.
 data Light
   = MkLight
     {
