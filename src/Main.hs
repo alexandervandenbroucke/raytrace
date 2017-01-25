@@ -88,6 +88,21 @@ mkray position direction@(MkV3D x y z) =
       eps = 2.2*(10**(-308))
   in MkRay position (MkV3D x' y' z') (recip z')
 
+-- | Given a 'Ray' and a point along the ray, return the distance travelled.
+--   More  precisely, given ray @r@ and point @p@ return t such that
+--
+--     @ ray_position r + t * ray_direction r = p
+--
+rayDistance :: Ray -> Vector3D -> Double
+rayDistance r (MkV3D _ _ pz) =
+  let MkV3D _ _ z = ray_position r
+  in (pz - z) * ray_recip r
+{-# INLINE rayDistance #-}
+
+--   A tuple of the intersection postion, surface normal at this position,
+--   the distance along the ray and the material at that position is returned.
+type Intersection = (Vector3D,Vector3D,Double,Material)
+
 -- | Materials specify the diffuse and specular reflexivity as well as the
 --   specularity (shinyness) of a 'Shape'.
 data Material
@@ -99,13 +114,11 @@ data Material
     }
 
 -- | A 'Shape' is something that can test for intersection with a 'Ray'.
---   When there is an intersection 'Just' a tuple of the intersection postion,
---   surface normal at this position and the material at that position is
---   returned.
+--   When there is an intersection 'Just' an 'Intersection' is returned.
 newtype Shape
   = MkShape
     {
-      isect :: Ray -> Maybe (Vector3D,Vector3D,Material)
+      isect :: Ray -> Maybe Intersection
     }
 
 -- | Shapes are monoids.
@@ -120,12 +133,8 @@ instance Monoid Shape where
      in case (isect1,isect2) of
          (Nothing,_) -> isect2
          (_,Nothing) -> isect1
-         (Just (MkV3D _ _ i1,_,_), Just (MkV3D _ _ i2,_,_)) ->
-           let MkV3D _ _ pz = ray_position ray
-               rz = ray_recip ray
-               t1 = (i1 - pz) * rz
-               t2 = (i2 - pz) * rz
-           in if t1 <= t2 then isect1 else isect2
+         (Just (i1,_,t1,_), Just (i2,_,t2,_)) ->
+           if t1 <= t2 then isect1 else isect2
   {-# INLINE mappend #-}
 
 -- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -140,23 +149,23 @@ rectangle material point width height =
       ww     = width  *@ width
       hh     = height *@ height
       point' = point - scalar 0.5 width - scalar 0.5 height
-      d =  -(point *@ normal)
+      d = -(point *@ normal)
   in MkShape $ \ray -> do
       isect <- planeLineIsect normal d (ray_position ray) (ray_direction ray)
       -- verify positive ray direction
-      guard $
-        (ray_direction ray) *@ (isect - ray_position ray) >= 0
+      let t = rayDistance ray isect
+      guard $ t >= 0
       -- verify within bounds of rectangle
       guard $
         let dV = isect - point'
             dw = dV *@ width
             dh = dV *@ height
         in 0 <= dw && dw <= ww && 0 <= dh && dh <= hh
-      return (isect, normal, material)
+      return (isect, normal,t,material)
 
 -- | Helper function to decide if a line intersects a plane.
 --   Takes the normal of the plane, it's "d" component, a point on the line
---   and the direcition of the line.
+--   and the direction of the line.
 planeLineIsect :: Vector3D -> Double -> Vector3D -> Vector3D -> Maybe Vector3D
 planeLineIsect normal d line_position line_dir = 
   let MkV3D a  b  c  = normal
@@ -166,7 +175,7 @@ planeLineIsect normal d line_position line_dir =
       z = (-d - a*lx - b*ly + (frac-c)*lz)/frac
       x = (a' * (z - lz)/ c') + lx
       y = (b' * (z - lz)/ c') + ly
-  in if abs frac <= 0.00001 then
+  in if abs frac <= 0.00001 then -- TODO: Z-face culling!
        Nothing
      else
        Just (MkV3D x y z)
@@ -272,7 +281,8 @@ triangle material pa pb pc =
   in MkShape $ \ray -> do
     isect <- planeLineIsect normal d (ray_position ray) (ray_direction ray)
     -- verify positive ray direction
-    guard $ (ray_direction ray) *@ (isect - ray_position ray) >= 0
+    let t = rayDistance ray isect
+    guard $ t >= 0
     -- verify within bounds of triangle
     guard $
       let dI = isect - pd
@@ -282,7 +292,7 @@ triangle material pa pb pc =
       in (dh >= 0 && dw1 >= 0 && dh / hh + dw1 / ww1 <= 1) -- triangle ADB
          ||
          (dh >= 0 && dw2 >= 0 && dh / hh + dw2 / ww2 <= 1) -- triangle BDC
-    return (isect,normal,material)
+    return (isect,normal,t,material)
 
 
 -------------------------------------------------------------------------------
@@ -293,7 +303,7 @@ triangle material pa pb pc =
 data Light
   = MkLight
     {
-      light :: Vector3D -> Vector3D -> Material -> Ray -> PixelRGB8
+      light :: Intersection -> Ray -> PixelRGB8
     }
 
 -- | Lights are monoids.
@@ -301,15 +311,13 @@ data Light
 --   The 'mappend' of two lights is simply the sum of their contribution,
 --   clamped to the maximal color value.
 instance Monoid Light where
-  mempty = MkLight $ \_ _ _ _ -> black
+  mempty = MkLight $ \_ _ -> black
   {-# INLINE mempty #-}
-  mappend (MkLight l1) (MkLight l2) = MkLight $ \ipos inormal intensity ray ->
+  mappend (MkLight l1) (MkLight l2) = MkLight $ \i ray ->
      let clamp x y = if x + y < x then 255 else x + y
          addPixelRGB8 (PixelRGB8 r1 g1 b1) (PixelRGB8 r2 g2 b2) =
            PixelRGB8 (clamp r1 r2) (clamp g1 g2) (clamp b1 b2)
-     in l1 ipos inormal intensity ray
-        `addPixelRGB8`
-        l2 ipos inormal intensity ray
+     in l1 i ray `addPixelRGB8` l2 i ray
   {-# INLINE mappend #-}
 
 -- | Helper function to convert a 'Pixel8' to a Double
@@ -321,15 +329,15 @@ p2d i = fromInteger (toInteger i)
 --   Takes the world ('Shape'), a diffuse and specular intensity and a
 --   position.
 pointLight :: Shape -> Double -> Double -> Vector3D -> Light
-pointLight world diffuse specular position =
-  MkLight $ \ipos inormal material ray ->
-    let to_light = normalize (position - ipos)
+pointLight world diffuse specular lpos =
+  MkLight $ \(ipos,inormal,_,material) ray ->
+    let to_light = normalize (lpos - ipos)
         (PixelRGB8 dr dg db) = mat_diffuse material
         (PixelRGB8 sr sg sb) = mat_specular material
         s = mat_specularity material
-    in case isect world (mkray (ipos + scalar 0.00001 to_light) to_light) of
-      Just (ipos',_,_)
-        | (position - ipos') *@ to_light >= 0 -> black
+        ray_to_light = mkray (ipos + scalar 0.00001 to_light) to_light
+    in case isect world ray_to_light of
+      Just (_,_,t,_) | t <= rayDistance ray_to_light lpos -> black
           -- ^ check if ipos' is between light and ipos ??
       _ ->
         -- note: properly reflection is 2 * (L.N) * N - L but here it's more
@@ -342,14 +350,15 @@ pointLight world diffuse specular position =
                 0
               else
                 specular * (max 0 (reflection' *@ ray_direction ray)) ** s
-            r = round $ min 255 $ fDiffuse * p2d dr + fSpecular * p2d sr
-            g = round $ min 255 $ fDiffuse * p2d dg + fSpecular * p2d sg
-            b = round $ min 255 $ fDiffuse * p2d db + fSpecular * p2d sb
+            f = min 1.0 (fDiffuse + fSpecular)
+            r = round $ f * p2d dr
+            g = round $ f * p2d dg
+            b = round $ f * p2d db
         in PixelRGB8 r g b
 
 -- | Ambient light, simply contributes a given intensity to every pixel.
 ambient :: Double -> Light
-ambient f = MkLight $ \_ _ (MkMaterial (PixelRGB8 ir ig ib) _ _) _ ->
+ambient f = MkLight $ \(_,_,_,(MkMaterial (PixelRGB8 ir ig ib) _ _)) _ ->
   let r = round $ f * p2d ir
       g = round $ f * p2d ig
       b = round $ f * p2d ib
@@ -402,8 +411,8 @@ fixedCamera width height =
 -- | Trace the ray generated at a given pixel position.
 trace :: Camera -> Light -> Shape -> Int -> Int -> PixelRGB8
 trace camera lights world x y = case isect world ray of
-  Nothing               -> black
-  Just (ipos,inormal,c) -> light lights ipos inormal c ray
+  Nothing                 -> black
+  Just i -> light lights i ray
   where ray = cast camera x y
 {-# INLINE trace #-}
 
@@ -566,10 +575,10 @@ cylinder topM botM mantleM point n h r  =
             dN = n1 - n2
             dNdP  = dN / dP
         in MkShape $ \ray -> do
-          (i,_,color) <- isect (rectangle mantleM p dP (MkV3D 0 h 0)) ray
+          (i,_,t,color) <- isect (rectangle mantleM p dP (MkV3D 0 h 0)) ray
           let MkV3D nx _ nz = n2 + (i - p2) * dNdP
               -- linearly interpolated normal
-          return (i, MkV3D nx 0 nz, color)
+          return (i, MkV3D nx 0 nz,t,color)
   in bot `mappend` top `mappend` mantle
 
 spec_test :: (Shape,Light)
