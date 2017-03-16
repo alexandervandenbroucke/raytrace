@@ -3,8 +3,6 @@
      Author: Alexander Vandenbroucke <alexander.vandenbroucke@gmail.com>
 -}
 
-{-# LANGUAGE BangPatterns #-}
-
 module Main where
 
 import Codec.Picture
@@ -74,8 +72,8 @@ scalar d (MkV3D x y z) = MkV3D (d*x) (d*y) (d*z)
 data Ray
   = MkRay
     {
-      ray_position  :: Vector3D,
-      ray_direction :: Vector3D,
+      ray_position  :: !Vector3D,
+      ray_direction :: !Vector3D,
       ray_recip     :: !Double
     }
   deriving Show
@@ -132,7 +130,7 @@ newtype Shape
 --   The @mappend@ of two 'Shape's is a 'Shape' that returns the interesection
 --   that is closest.
 instance Monoid Shape where
-  mempty  = MkShape $ \_ -> Nothing
+  mempty  = MkShape (const Nothing)
   r1 `mappend` r2 = MkShape $ \ray -> 
      let isect1 = isect r1 ray
          isect2 = isect r2 ray
@@ -157,10 +155,7 @@ rectangle material point width height =
       point' = point - scalar 0.5 width - scalar 0.5 height
       d = -(point *@ normal)
   in MkShape $ \ray -> do
-      isect <- planeLineIsect normal d (ray_position ray) (ray_direction ray)
-      -- verify positive ray direction
-      let t = rayDistance ray isect
-      guard $ t >= 0
+      (isect,t) <- planeRayIsect normal d ray
       -- verify within bounds of rectangle
       guard $
         let dV = isect - point'
@@ -168,6 +163,19 @@ rectangle material point width height =
             dh = dV *@ height
         in 0 <= dw && dw <= ww && 0 <= dh && dh <= hh
       return (isect, normal,t,material)
+
+-- | Helper function to decide if a ray intersects a plane.
+--   Takes the normal of the plane, it's "d" component and a ray.
+--   Returns a tuple of the intersection point and the ray distance to the
+--   point in a @Maybe@.
+planeRayIsect :: Vector3D -> Double -> Ray -> Maybe (Vector3D,Double)
+planeRayIsect normal d ray = do
+  isect <- planeLineIsect normal d (ray_position ray) (ray_direction ray)
+  -- verify positive ray direction
+  let t = rayDistance ray isect
+  guard (t >= 0)
+  return (isect,t)
+{-# INLINE planeRayIsect #-}
 
 -- | Helper function to decide if a line intersects a plane.
 --   Takes the normal of the plane, it's "d" component, a point on the line
@@ -285,10 +293,7 @@ triangle material pa pb pc =
       normal = normalize (u *# v)
       d = scalar (-1) pa *@ normal
   in MkShape $ \ray -> do
-    isect <- planeLineIsect normal d (ray_position ray) (ray_direction ray)
-    -- verify positive ray direction
-    let t = rayDistance ray isect
-    guard $ t >= 0
+    (isect,t) <- planeRayIsect normal d ray
     -- verify within bounds of triangle
     guard $
       let dI = isect - pd
@@ -306,7 +311,7 @@ triangle material pa pb pc =
 
 -- | A light shades a pixel according to the intersection with the shape, as
 --   well as the 'Ray' that intersected it.
-data Light
+newtype Light
   = MkLight
     {
       light :: Intersection -> Ray -> PixelRGB8
@@ -355,7 +360,7 @@ pointLight world diffuse specular lpos =
               if lndot <= 0 then
                 0
               else
-                specular * (max 0 (reflection' *@ ray_direction ray)) ** s
+                specular * (max 0 (reflection' *@ ray_direction ray) ** s)
             f = min 1.0 (fDiffuse + fSpecular)
             r = round $ f * p2d dr
             g = round $ f * p2d dg
@@ -364,7 +369,7 @@ pointLight world diffuse specular lpos =
 
 -- | Ambient light, simply contributes a given intensity to every pixel.
 ambient :: Double -> Light
-ambient f = MkLight $ \(_,_,_,(MkMaterial (PixelRGB8 ir ig ib) _ _)) _ ->
+ambient f = MkLight $ \(_,_,_, MkMaterial (PixelRGB8 ir ig ib) _ _) _ ->
   let r = round $ f * p2d ir
       g = round $ f * p2d ig
       b = round $ f * p2d ib
@@ -374,7 +379,7 @@ ambient f = MkLight $ \(_,_,_,(MkMaterial (PixelRGB8 ir ig ib) _ _)) _ ->
 -- Camera: casts (creates) rays.
 
 -- | A camera generates 'Ray's for every pixel.
-data Camera
+newtype Camera
   = MkCamera
     {
       cast :: Int -> Int -> Ray
@@ -401,8 +406,8 @@ fixedCamera width height =
       -- picture midpoint. The viewport midpoint is assumed to be the origin.
       -- the picture midpoint is assumed to be the middle of the picture
       -- (width and height / 2).
-      dX = 0 - scaleX * w/2
-      dY = 0 - scaleY * h/2
+      dX = negate (scaleX * w/2)
+      dY = negate (scaleY * h/2)
       d  = tan(fov/2) * dX  -- distance from the screen
   in MkCamera $ \screenX screenY ->
     let posX = scaleX * (fromIntegral screenX) + dX
@@ -437,19 +442,19 @@ main =
       -- world  = cylinder blue blue green (MkV3D 0 (-2) (-10)) 20 1 5  `mappend` axes
       -- world  = stacked_cubes
       -- world = triangle_example
+      -- (world,lights) = intersection
       -- world = cubes
       camera = fixedCamera w h
       light  = pointLight world 0.03 0.2 (MkV3D 2 0 0)
       light2 = pointLight world 0.3 1.0 (MkV3D 0 4 (-10))
       -- lights = mconcat [light,light2,ambient 0.2]
-      -- (world,lights) = spec_test
-      -- (world,lights) = intersection
-      world = mconcat [
-        tree (MkV3D (-2) (-1) (-4)),
-        tree  (MkV3D (-1) (-1) (-6)),
-        tree  (MkV3D 1 (-1) (-2)),
-        rectangle white (MkV3D 0 (-1) (-4)) (MkV3D 0 0 10) (MkV3D 10 0 0)]
-      lights = mconcat [pointLight world 0.8 0.8 (MkV3D 0 100 0), ambient 0.5]
+      (world,lights) = spec_test
+      -- world = mconcat [
+      --   tree (MkV3D (-2) (-1) (-4)),
+      --   tree  (MkV3D (-1) (-1) (-6)),
+      --   tree  (MkV3D 1 (-1) (-2)),
+      --   rectangle white (MkV3D 0 (-1) (-4)) (MkV3D 0 0 10) (MkV3D 10 0 0)]
+      -- lights = mconcat [pointLight world 0.8 0.8 (MkV3D 0 100 0), ambient 0.5]
       -- (world,lights) = intersection
       w      = 1024
       h      = 1024
@@ -470,7 +475,7 @@ parallelTrace w h trace x y =
 
 planes = mconcat [
   rectangle red   (MkV3D (-0.5) (-0.5) (-2))   (MkV3D 1 0 0) (MkV3D 0 1 0),
-  rectangle blue  (MkV3D (-1)   (-0.5) (-1.5)) (MkV3D 0 1 0) (MkV3D 0 0 (1)),
+  rectangle blue  (MkV3D (-1)   (-0.5) (-1.5)) (MkV3D 0 1 0) (MkV3D 0 0 1),
   rectangle green (MkV3D (-0.5) (-1)   (-1.5)) (MkV3D 1 0 0) (MkV3D 0 0 (-1))]
 
 axes = mconcat [
