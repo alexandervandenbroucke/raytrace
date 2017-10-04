@@ -21,15 +21,26 @@ import Control.Applicative (ZipList(..))
 -- Vector3D: 3 dimensional vector and operations
 
 -- | A datatype for double-precision 3 dimensional vectors.
-data Vector3D = MkV3D !Double !Double !Double deriving Show
+data Vector3D
+  = MkV3D
+    {-# UNPACK #-} !Double
+    {-# UNPACK #-} !Double
+    {-# UNPACK #-} !Double
+  deriving Show
 
 instance Num Vector3D where
   MkV3D x1 y1 z1 + MkV3D x2 y2 z2 = MkV3D (x1+x2) (y1+y2) (z1+z2)
+  {-# INLINE (+) #-}
   MkV3D x1 y1 z1 * MkV3D x2 y2 z2 = MkV3D (x1*x2) (y1*y2) (z1*z2)
+  {-# INLINE (*) #-}
   MkV3D x1 y1 z1 - MkV3D x2 y2 z2 = MkV3D (x1-x2) (y1-y2) (z1-z2)
+  {-# INLINE (-) #-}
   fromInteger i = MkV3D d d d where d = fromInteger i
+  {-# INLINE fromInteger #-}
   abs = undefined
+  {-# INLINE abs #-}
   signum (MkV3D x y z) = MkV3D (signum x) (signum y) (signum z)
+  {-# INLINE signum #-}
 
 instance Fractional Vector3D where
   MkV3D x1 y1 z1 / MkV3D x2 y2 z2 = MkV3D (x1/x2) (y1/y2) (z1/z2)
