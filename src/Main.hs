@@ -653,3 +653,58 @@ tree point =
     pyramid specwhite (p0 + MkV3D 0 0.5 0) 0.5 1,
     -- cuboid darkbrown (p0-MkV3D 0 0.35 0) 0.5 0.7 0.5]
     cylinder black black darkbrown (p0-MkV3D 0 0.35 0) 12 0.7 0.25]
+
+data BSP
+  = XSplit (Double,Double) BSP BSP
+  | YSplit (Double,Double) BSP BSP
+  | Leaf
+  deriving (Show,Read)
+
+halve :: [a] -> ([a],[a])
+halve []       = ([],[])
+halve [x]      = ([x],[])
+halve (x:y:xys) = let (xs,ys) = halve xys in (x:xs,y:ys)
+
+bspRect :: Vector3D
+        -> (Double,Double)
+        -> (Double,Double)
+        -> BSP
+        -> [Material]
+        -> Shape
+bspRect pos0 (minX0,maxX0) (minY0,maxY0) tree0 colors0 =
+  let go (minX,maxX) (minY,maxY) tree colors = case tree of
+        Leaf ->
+          let width  = maxX - minX
+              height = maxY - minY
+          in (rectangle (head colors)
+              (cornerPos + MkV3D (minX + width/2) (minY + height/2) 0)
+              (MkV3D width 0 0)
+              (MkV3D 0 height 0))
+        XSplit (x,y) l r ->
+          let (xs,ys) = halve colors
+          in go (minX,x) (minY,maxY) l xs
+             `mappend`
+             go (x,maxX) (minY,maxY) r ys
+             `mappend`
+             cube white (cornerPos + MkV3D x y 0) 0.5
+        YSplit (x,y) d u ->
+          let (xs,ys) = halve colors
+          in go (minX,maxX) (y,maxY) u xs
+             `mappend`
+             go (minX,maxX) (minY,y) d ys
+             `mappend`
+             cube white (cornerPos + MkV3D x y 0) 0.5
+      width0    = maxX0 - minX0
+      height0   = maxY0 - minY0
+      cornerPos = pos0 - MkV3D (width0 / 2) (height0 / 2) 0
+  in go (minX0,maxX0) (minY0,maxY0) tree0 colors0
+
+bsp :: (Shape,Light)
+bsp =
+  let str = "XSplit (7.0,2.0) (YSplit (5.0,4.0) (XSplit (2.0,3.0) Leaf Leaf) (XSplit (4.0,7.0) Leaf Leaf)) (YSplit (9.0,6.0) (XSplit (8.0,1.0) Leaf Leaf) Leaf)"
+      colors = cycle [red,green,blue,magenta,cyan,aquamarine,yellow,orange,orchid]
+      shape = bspRect (MkV3D 0 0 (-15)) (0,10) (0,10) (read str) colors
+              `mappend`
+              cube black (MkV3D (6 - 5) (2 - 5) (-15)) 0.5
+      light = pointLight shape 0.3 0.6 (MkV3D 0 0 0)
+  in (shape,light)
