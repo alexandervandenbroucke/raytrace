@@ -226,7 +226,7 @@ colorcube materials point l = colorcuboid materials point l l l
 cuboid :: Material -> Vector3D -> Double -> Double -> Double -> Shape
 cuboid material point l h d = colorcuboid [material] point l h d
 
--- | A cube where every side has a different material.
+-- | A cuboid where every side has a different material.
 --   The list of materials must be non-empty.
 colorcuboid :: [Material] -> Vector3D -> Double -> Double -> Double -> Shape
 colorcuboid [] _ _ _ _ = error "colorcuboid: list of materials must not be empty."
@@ -697,14 +697,46 @@ bspRect pos0 (minX0,maxX0) (minY0,maxY0) tree0 colors0 =
       width0    = maxX0 - minX0
       height0   = maxY0 - minY0
       cornerPos = pos0 - MkV3D (width0 / 2) (height0 / 2) 0
+      halve (x:y:xys) = let (xs,ys) = halve xys in (x:xs,y:ys)
   in go (minX0,maxX0) (minY0,maxY0) tree0 colors0
+
+bspLines :: Vector3D
+        -> (Double,Double)
+        -> (Double,Double)
+        -> BSP
+        -> Shape
+bspLines pos0 (minX0,maxX0) (minY0,maxY0) tree0 =
+  let go (minX,maxX) (minY,maxY) tree = case tree of
+        Leaf -> mempty
+        XSplit (x,y) l r ->
+          go (minX,x) (minY,maxY) l
+          `mappend`
+          go (x,maxX) (minY,maxY) r
+          `mappend`
+          cuboid white (cornerPos + MkV3D x (minY + (maxY-minY)/2) 0) w (maxY-minY) w
+        YSplit (x,y) d u ->
+          go (minX,maxX) (y,maxY) u
+          `mappend`
+          go (minX,maxX) (minY,y) d
+          `mappend`
+          cuboid white (cornerPos + MkV3D (minX + (maxX-minX)/2) y 0) (maxX-minX) w w
+      width0    = maxX0 - minX0
+      height0   = maxY0 - minY0
+      cornerPos = pos0 - MkV3D (width0 / 2) (height0 / 2) 0
+      w = 0.25
+  in go (minX0,maxX0) (minY0,maxY0) tree0
+
 
 bsp :: (Shape,Light)
 bsp =
-  let str = "XSplit (7.0,2.0) (YSplit (5.0,4.0) (XSplit (2.0,3.0) Leaf Leaf) (XSplit (4.0,7.0) Leaf Leaf)) (YSplit (9.0,6.0) (XSplit (8.0,1.0) Leaf Leaf) Leaf)"
-      colors = cycle [red,green,blue,magenta,cyan,aquamarine,yellow,orange,orchid]
-      shape = bspRect (MkV3D 0 0 (-15)) (0,10) (0,10) (read str) colors
-              `mappend`
-              cube black (MkV3D (6 - 5) (2 - 5) (-15)) 0.5
-      light = pointLight shape 0.3 0.6 (MkV3D 0 0 0)
+  let
+    -- str = "XSplit (7.0,2.0) (YSplit (5.0,4.0) (XSplit (2.0,3.0) Leaf Leaf) (XSplit (4.0,7.0) Leaf Leaf)) (YSplit (9.0,6.0) (XSplit (8.0,1.0) Leaf Leaf) Leaf)"
+    str = "XSplit (2.0,3.0) Leaf (YSplit (5.0,4.0) (XSplit (8.0,1.0) (YSplit (7.0,2.0) Leaf Leaf) Leaf) (XSplit (9.0,6.0) (YSplit (4.0,7.0) Leaf Leaf) Leaf))"
+    colors = cycle [red,green,blue,magenta,cyan,aquamarine,yellow,orange,orchid]
+    shape = bspRect (MkV3D 0 0 (-15)) (0,10) (0,10) (read str) colors
+            `mappend`
+            cube black (MkV3D (6 - 5) (2 - 5) (-15)) 0.5
+            `mappend`
+            bspLines (MkV3D 0 0 (-15)) (0,10) (0,10) (read str)
+    light = pointLight shape 0.3 0.6 (MkV3D 0 0 0)
   in (shape,light)
