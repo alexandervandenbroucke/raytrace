@@ -283,26 +283,20 @@ triangle :: Material -> Vector3D -> Vector3D -> Vector3D -> Shape
 triangle material pa pb pc =
   let u = pb - pa
       v = pc - pa
-      h = u - scalar (u *@ v / v *@ v) v
-      pd = pb - h
-      w1 = pa - pd
-      w2 = pc - pd
-      hh = h *@ h
-      ww1 = w1 *@ w1
-      ww2 = w2 *@ w2
       normal = normalize (u *# v)
       d = scalar (-1) pa *@ normal
+      cA = pb - pa
+      cB = pc - pb
+      cC = pa - pc
   in MkShape $ \ray -> do
     (isect,t) <- planeRayIsect normal d ray
+    let dA = isect - pa
+        dB = isect - pb
+        dC = isect - pc
     -- verify within bounds of triangle
-    guard $
-      let dI = isect - pd
-          dw1 = dI *@ w1
-          dw2 = dI *@ w2
-          dh  = dI *@ h
-      in (dh >= 0 && dw1 >= 0 && dh / hh + dw1 / ww1 <= 1) -- triangle ADB
-         ||
-         (dh >= 0 && dw2 >= 0 && dh / hh + dw2 / ww2 <= 1) -- triangle BDC
+    guard ((cA *# dA) *@ normal >= 0)
+    guard ((cB *# dB) *@ normal >= 0)
+    guard ((cC *# dC) *@ normal >= 0)
     return (isect,normal,t,material)
 
 
@@ -445,17 +439,18 @@ main =
       -- (world,lights) = intersection
       -- world = cubes
       camera = fixedCamera w h
-      light  = pointLight world 0.03 0.2 (MkV3D 2 0 0)
-      light2 = pointLight world 0.3 1.0 (MkV3D 0 4 (-10))
+      -- light  = pointLight world 0.03 0.2 (MkV3D 2 0 0)
+      -- light2 = pointLight world 0.3 1.0 (MkV3D 0 4 (-10))
       -- lights = mconcat [light,light2,ambient 0.2]
-      (world,lights) = spec_test
-      -- world = mconcat [
-      --   tree (MkV3D (-2) (-1) (-4)),
-      --   tree  (MkV3D (-1) (-1) (-6)),
-      --   tree  (MkV3D 1 (-1) (-2)),
-      --   rectangle white (MkV3D 0 (-1) (-4)) (MkV3D 0 0 10) (MkV3D 10 0 0)]
-      -- lights = mconcat [pointLight world 0.8 0.8 (MkV3D 0 100 0), ambient 0.5]
+      -- (world,lights) = spec_test
+      world = mconcat [
+        tree (MkV3D (-2) (-1) (-4)),
+        tree  (MkV3D (-1) (-1) (-6)),
+        tree  (MkV3D 1 (-1) (-2)),
+        rectangle white (MkV3D 0 (-1) (-4)) (MkV3D 0 0 10) (MkV3D 10 0 0)]
+      lights = mconcat [pointLight world 0.8 0.8 (MkV3D 0 100 0), ambient 0.5]
       -- (world,lights) = intersection
+      -- (world,lights) = bsp
       w      = 1024
       h      = 1024
   in saveBmpImage "trace.bmp" $ ImageRGB8 $ generateImage trace' w h
