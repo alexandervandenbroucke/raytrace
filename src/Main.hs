@@ -133,7 +133,7 @@ data Material
 newtype Shape
   = MkShape
     {
-      isect :: Ray -> Maybe Intersection
+      intersect :: Ray -> Maybe Intersection
     }
 
 -- | Shapes are monoids.
@@ -143,8 +143,8 @@ newtype Shape
 instance Monoid Shape where
   mempty  = MkShape (const Nothing)
   r1 `mappend` r2 = MkShape $ \ray -> 
-     let isect1 = isect r1 ray
-         isect2 = isect r2 ray
+     let isect1 = intersect r1 ray
+         isect2 = intersect r2 ray
      in case (isect1,isect2) of
          (Nothing,_) -> isect2
          (_,Nothing) -> isect1
@@ -352,7 +352,7 @@ pointLight world diffuse specular lpos =
         (PixelRGB8 sr sg sb) = mat_specular material
         s = mat_specularity material
         ray_to_light = mkray (ipos + scalar 0.00001 to_light) to_light
-    in case isect world ray_to_light of
+    in case intersect world ray_to_light of
       Just (_,_,t,_) | t <= rayDistance ray_to_light lpos -> black
           -- ^ check if ipos' is between light and ipos ??
       _ ->
@@ -426,7 +426,7 @@ fixedCamera width height =
 
 -- | Trace the ray generated at a given pixel position.
 trace :: Camera -> Light -> Shape -> Int -> Int -> PixelRGB8
-trace camera lights world x y = case isect world ray of
+trace camera lights world x y = case intersect world ray of
   Nothing                 -> black
   Just i -> light lights i ray
   where ray = cast camera x y
@@ -452,6 +452,7 @@ main =
       camera = fixedCamera w h
       -- light  = pointLight world 0.03 0.2 (MkV3D 2 0 0)
       -- light2 = pointLight world 0.3 1.0 (MkV3D 0 4 (-10))
+      -- lights = mconcat [light,light2,ambient 0.2]
       -- lights = mconcat [light,light2,ambient 0.2]
       -- (world,lights) = spec_test
       world = mconcat [
@@ -567,7 +568,7 @@ cylinder topM botM mantleM point n h r  =
         <*> topPoints
       bot =
         mconcatZL
-        $ triangle botM  botPoint
+        $ triangle botM botPoint
         <$> botPoints
         <*> tailZL botPoints
       mantle =
@@ -584,7 +585,7 @@ cylinder topM botM mantleM point n h r  =
             dN = n1 - n2
             dNdP  = dN / dP
         in MkShape $ \ray -> do
-          (i,_,t,color) <- isect (rectangle mantleM p dP (MkV3D 0 h 0)) ray
+          (i,_,t,color) <- intersect (rectangle mantleM p dP (MkV3D 0 h 0)) ray
           let MkV3D nx _ nz = n2 + (i - p2) * dNdP
               -- linearly interpolated normal
           return (i, MkV3D nx 0 nz,t,color)
@@ -597,12 +598,12 @@ spec_test =
         rectangle blue       (MkV3D 0    10  0)  (MkV3D 20 0 0)     (MkV3D 0 0 (-40)),
         rectangle white      (MkV3D (-2) 0 (-4)) (MkV3D 0 6 0)      (MkV3D 0 0 6),
         rectangle spec_white (MkV3D 2    0 (-4)) (MkV3D (-0.5) 0 6) (MkV3D 0 6 0)]
-      light =
+      spec_lights =
         pointLight world 0.3 0.6 (MkV3D 0 0 (-4))
         `mappend`
         pointLight world 0.0 1.0 (MkV3D (-3) 0 (-10))
       spec_white = white{mat_specularity=400} 
-   in (world, light)
+   in (world, spec_lights)
 
 intersection :: (Shape,Light)
 intersection =
