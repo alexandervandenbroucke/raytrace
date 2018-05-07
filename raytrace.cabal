@@ -22,7 +22,7 @@ executable raytrace
   ghc-options:         -O2 -funbox-strict-fields -threaded -rtsopts
   -- Repa suggested options (do not use until code-size is smaller)
   -- ghc-options:         -Odph -rtsopts -threaded -fno-liberate-case -funfolding-use-threshold1000 -funfolding-keeness-factor1000 -optlo-O3 -funbox-strict-fields
-  build-depends:       base >=4.8 && <4.9,
+  build-depends:       base >=4.8 && <4.11,
                        JuicyPixels, repa, mtl
   hs-source-dirs:      src
   default-language:    Haskell2010
