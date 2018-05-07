@@ -294,20 +294,21 @@ triangle :: Material -> Vector3D -> Vector3D -> Vector3D -> Shape
 triangle material pa pb pc =
   let u = pb - pa
       v = pc - pa
+      uv = u *@ v
+      uu = u *@ u
+      vv = v *@ v
+      n = uv * uv - uu * vv
       normal = normalize (u *# v)
       d = scalar (-1) pa *@ normal
-      cA = pb - pa
-      cB = pc - pb
-      cC = pa - pc
   in MkShape $ \ray -> do
     (isect,t) <- planeRayIsect normal d ray
-    let dA = isect - pa
-        dB = isect - pb
-        dC = isect - pc
+    let w = isect - pa
+        wv = w *@ v
+        wu = w *@ u
+        r = (uv * wv - vv * wu) / n
+        s = (uv * wu - uu * wv) / n
     -- verify within bounds of triangle
-    guard ((cA *# dA) *@ normal >= 0)
-    guard ((cB *# dB) *@ normal >= 0)
-    guard ((cC *# dC) *@ normal >= 0)
+    guard (r >= 0 && s >= 0 && r + s <= 1)
     return (isect,normal,t,material)
 
 
