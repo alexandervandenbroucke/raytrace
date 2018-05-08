@@ -189,8 +189,8 @@ planeRayIsect normal d ray = do
 {-# INLINE planeRayIsect #-}
 
 -- | Helper function to decide if a line intersects a plane.
---   Takes the normal of the plane, it's "d" component, a point on the line
---   and the direction of the line.
+--   Takes the normal of the plane, its distance to the origin, a point on
+--   the line and the direction of the line.
 planeLineIsect :: Vector3D -> Double -> Vector3D -> Vector3D -> Maybe Vector3D
 planeLineIsect normal d line_position line_dir = 
   let MkV3D a  b  c  = normal
