@@ -474,18 +474,18 @@ main =
       -- world = triangle_example
       -- (world,lights) = intersection
       -- world = cubes
+      (world,lights) = spheres
       camera = fixedCamera w h
       -- light  = pointLight world 0.03 0.2 (MkV3D 2 0 0)
       -- light2 = pointLight world 0.3 1.0 (MkV3D 0 4 (-10))
       -- lights = mconcat [light,light2,ambient 0.2]
-      -- lights = mconcat [light,light2,ambient 0.2]
       -- (world,lights) = spec_test
-      world = mconcat [
-        tree (MkV3D (-2) (-1) (-4)),
-        tree  (MkV3D (-1) (-1) (-6)),
-        tree  (MkV3D 1 (-1) (-2)),
-        rectangle white (MkV3D 0 (-1) (-4)) (MkV3D 0 0 10) (MkV3D 10 0 0)]
-      lights = mconcat [pointLight world 0.8 0.8 (MkV3D 0 100 0), ambient 0.5]
+      -- world = mconcat [
+      --   tree (MkV3D (-2) (-1) (-4)),
+      --   tree  (MkV3D (-1) (-1) (-6)),
+      --   tree  (MkV3D 1 (-1) (-2)),
+      --   rectangle white (MkV3D 0 (-1) (-4)) (MkV3D 0 0 10) (MkV3D 10 0 0)]
+      -- lights = mconcat [pointLight world 0.8 0.8 (MkV3D 0 100 0), ambient 0.5]
       -- (world,lights) = intersection
       -- (world,lights) = bsp
       w      = 1024
@@ -535,6 +535,16 @@ cubes =
     colorcube colors (MkV3D 0 2    (-6)) 1,
     colorcube colors (MkV3D 0 0    (-6)) 1]
   where colors = [red,green,blue,magenta,cyan,aquamarine,yellow,orange,orchid]
+
+spheres =
+  let world = mconcat [
+        sphere white (MkV3D (-2) 0 (-9)) 2,
+        sphere red (MkV3D 0 1 (-12)) 2,
+        sphere blue (MkV3D 2 1 (-10)) 2]
+      lights = mconcat [
+        pointLight world 0.8 0.1 (MkV3D 0 3 0),
+        ambient 0.2]
+  in (world,lights)
 
 stacked_cubes =
   mconcat [
