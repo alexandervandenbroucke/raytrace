@@ -311,6 +311,30 @@ triangle material pa pb pc =
     guard (r >= 0 && s >= 0 && r + s <= 1)
     return (isect,normal,t,material)
 
+-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+-- Sphere
+
+-- A sphere.
+-- The sphere is identified by its center point and radius.
+sphere :: Material -> Vector3D -> Double -> Shape
+sphere material center radius =
+  MkShape $ \ray -> do
+    let o = ray_position ray - center
+        d = ray_direction ray
+        b = 2 * d *@ o
+        c = (o *@ o) - radius*radius
+        delta = b*b - 4 * c
+    guard (delta >= 0)
+    let t = if delta > 0 then
+              let t1 = (-b + sqrt delta) / 2
+                  t2 = (-b - sqrt delta) / 2
+              in min (max t1 0) (max t2 0)
+            else -b / 2
+    guard (t > 0)
+    let isect  = ray_position ray + scalar t d
+        normal = scalar (recip radius) (isect - center)
+    return (isect,normal,t,material)
+
 
 -------------------------------------------------------------------------------
 -- Lights
