@@ -385,24 +385,22 @@ p2d i = fromInteger (toInteger i)
 --   position.
 pointLight :: Shape -> Double -> Double -> Vector3D -> Light
 pointLight world diffuse specular lpos =
-  MkLight $ \(ipos,inormal,_,material) ray ->
-    let to_light = normalize (lpos - ipos)
+  MkLight $ \(hit,normal,_,material) ray ->
+    let to_light = normalize (lpos - hit)
         s = mat_specularity material
-        ray_to_light = mkray (ipos + scalar 0.00001 to_light) to_light
+        ray_to_light = mkray (hit + scalar 0.00001 to_light) to_light
     in case intersect world ray_to_light of
       Just (_,_,t,_) | t <= rayDistance ray_to_light lpos -> black
-          -- ^ check if ipos' is between light and ipos ??
       _ ->
-        -- note: properly reflection is 2 * (L.N) * N - L but here it's more
-        -- convenient to use its inverse.
-        let lndot = to_light *@ inormal
-            reflection' = to_light - scalar (2 * lndot) inormal
-            fDiffuse  = diffuse * max 0 lndot
-            fSpecular = 
-              if lndot <= 0 then
-                0
-              else
-                specular * (max 0 (reflection' *@ ray_direction ray) ** s)
+        let lndot = to_light *@ normal
+            reflection = to_light - scalar (2 * lndot) normal
+            -- properly reflection is 2 * (L.N) * N - L but here it's more
+            -- convenient to use its negation.
+            fDiffuse = diffuse * max 0 lndot
+            fSpecular
+              | lndot <= 0 = 0
+              | otherwise  = 
+                  specular * (max 0 (reflection *@ ray_direction ray) ** s)
         in scalePixelRGB8 fDiffuse  (mat_diffuse material)
            `addPixelRGB8`
            scalePixelRGB8 fSpecular (mat_specular material)
