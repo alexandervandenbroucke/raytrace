@@ -123,9 +123,10 @@ type Intersection = (Vector3D,Vector3D,Double,Material)
 data Material
   = MkMaterial
     {
-      mat_diffuse     :: !PixelRGB8,
-      mat_specular    :: !PixelRGB8,
-      mat_specularity :: !Double
+      mat_diffuse      :: !PixelRGB8,
+      mat_specular     :: !PixelRGB8,
+      mat_specularity  :: !Double,
+      mat_reflectivity :: !Double
     }
 
 -- | A 'Shape' is something that can test for intersection with a 'Ray'.
@@ -271,17 +272,17 @@ instance Color PixelRGB8 where
   aquamarine = PixelRGB8 69 139 116
 
 instance Color Material where
-  black   = MkMaterial black black 1.0
-  white   = MkMaterial white white 1.0
-  red     = MkMaterial red   red   1.0
-  green   = MkMaterial green green 1.0
-  blue    = MkMaterial blue  blue  1.0
-  magenta = MkMaterial magenta magenta 1.0
-  cyan    = MkMaterial cyan    cyan    1.0
-  yellow  = MkMaterial yellow  yellow  1.0
-  orange  = MkMaterial orange  orange  1.0
-  orchid  = MkMaterial orchid  orchid  1.0
-  aquamarine = MkMaterial aquamarine aquamarine 1.0
+  black   = MkMaterial black black 1.0 0.0
+  white   = MkMaterial white white 1.0 0.0
+  red     = MkMaterial red   red   1.0 0.0
+  green   = MkMaterial green green 1.0 0.0
+  blue    = MkMaterial blue  blue  1.0 0.0
+  magenta = MkMaterial magenta magenta 1.0 0.0
+  cyan    = MkMaterial cyan    cyan    1.0 0.0
+  yellow  = MkMaterial yellow  yellow  1.0 0.0
+  orange  = MkMaterial orange  orange  1.0 0.0
+  orchid  = MkMaterial orchid  orchid  1.0 0.0
+  aquamarine = MkMaterial aquamarine aquamarine 1.0 0.0
   {-# INLINE black #-}
 
 -- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -452,16 +453,31 @@ fixedCamera width height =
         direction = normalize (MkV3D posX posY d)
     in mkray position direction
 
+
+
 -------------------------------------------------------------------------------
 -- Ray tracing
 
--- | Trace the ray generated at a given pixel position.
-trace :: Camera -> Light -> Shape -> Int -> Int -> PixelRGB8
-trace camera lights world x y = case intersect world ray of
-  Nothing                 -> black
-  Just i -> light lights i ray
-  where ray = cast camera x y
+-- | Trace the given ray, with a given number of reflections.
+trace :: Int -> Light -> Shape -> Ray -> PixelRGB8
+trace 0 _      _     _   = black
+trace n lights world ray = case intersect world ray of
+  Nothing -> black
+  Just hit  -> addPixelRGB8 (light lights hit ray) reflection where
+    reflection =
+      let (ipos,inormal,_,material) = hit
+          reflectivity = mat_reflectivity material
+          r    = inormal *@ ray_direction ray
+          rdir = ray_direction ray - scalar (2*r) inormal
+                 -- direction of reflected ray
+          reflected = mkray (ipos + scalar 0.00001 rdir) rdir
+      in if reflectivity > 0 && r < 0 then
+           scalePixelRGB8 reflectivity (trace (n-1) lights world reflected)
+         else
+           black
 {-# INLINE trace #-}
+
+
 
 -------------------------------------------------------------------------------
 -- Main function
@@ -473,8 +489,7 @@ trace camera lights world x y = case intersect world ray of
 
 main :: IO ()
 main = 
-  let trace' = parallelTrace w h (trace camera lights world)
-      -- trace' = trace camera lights world
+  let trace' = parallelTrace w h camera (trace 4 lights world)
       -- world  = cylinder blue blue green (MkV3D 0 (-2) (-10)) 20 1 5  `mappend` axes
       -- world  = stacked_cubes
       -- world = triangle_example
@@ -499,12 +514,15 @@ main =
   in saveBmpImage "trace.bmp" $ ImageRGB8 $ generateImage trace' w h
 
 parallelTrace :: Int -> Int
-              -> (Int -> Int -> PixelRGB8)
+              -> Camera
+              -> (Ray -> PixelRGB8)
               -> Int -> Int
               -> PixelRGB8
-parallelTrace w h trace x y =
+parallelTrace w h camera trace x y =
   let tracedD = fromFunction (Z :. h :. w) trace' where
-        trace' (Z :. y :. x) = (r,g,b) where PixelRGB8 r g b = trace x y
+        trace' (Z :. y' :. x') =
+          let PixelRGB8 r g b = trace (cast camera x' y')
+          in (r,g,b)
       traced :: Array U DIM2 (Pixel8,Pixel8,Pixel8)
       traced = runIdentity $ computeP tracedD
       (r,g,b) = traced ! (Z :. y :. x)
@@ -544,12 +562,24 @@ cubes =
 
 spheres =
   let world = mconcat [
-        sphere white (MkV3D (-2) 0 (-9)) 2,
-        sphere red (MkV3D 0 1 (-12)) 2,
-        sphere blue (MkV3D 2 1 (-10)) 2]
+        sphere mirror (MkV3D (-2) 1 (-4)) 1,
+        sphere red (MkV3D 0 1 (-7)) 1,
+        sphere blue (MkV3D 2 1 (-5)) 1,
+        rectangle orange (MkV3D 0 (-5) (-10)) (MkV3D 0 0 20) (MkV3D 20 0 0),
+        rectangle green  (MkV3D 0 5 (-15))    (MkV3D 20 0 0) (MkV3D 0 20 0),
+        rectangle mirror (MkV3D 0 4 (-10))    (MkV3D 20 0 0) (MkV3D 0 0 20),
+        rectangle white  (MkV3D 10 4 (-10))   (MkV3D 0 0 20)  (MkV3D 0 1 0)
+        ]
       lights = mconcat [
-        pointLight world 0.8 0.1 (MkV3D 0 3 0),
+        pointLight world 0.8 0.1 (MkV3D 0 3 (-10)),
+        pointLight world 0.8 0.8 (MkV3D 0 3 0),
         ambient 0.2]
+      mirror =
+        black{
+          mat_reflectivity = 0.9,
+          mat_specular = white,
+          mat_specularity = 100
+        }
   in (world,lights)
 
 stacked_cubes =
@@ -679,14 +709,16 @@ tree point =
         { 
           mat_diffuse  = PixelRGB8 0 50 0,
           mat_specular = PixelRGB8 0 0 0,
-          mat_specularity = 1.0
+          mat_specularity = 1.0,
+          mat_reflectivity = 0.0
         }
       darkbrown =
         MkMaterial
         { 
           mat_diffuse  = PixelRGB8 50 50 0,
           mat_specular = PixelRGB8 50 50 0,
-          mat_specularity = 1.0
+          mat_specularity = 1.0,
+          mat_reflectivity = 0.0
         }
       specwhite = white{mat_diffuse = PixelRGB8 100 100 100,mat_specularity=100}
   in mconcat [
