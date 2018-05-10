@@ -355,11 +355,24 @@ instance Monoid Light where
   mempty = MkLight $ \_ _ -> black
   {-# INLINE mempty #-}
   mappend (MkLight l1) (MkLight l2) = MkLight $ \i ray ->
-     let clamp x y = if x + y < x then 255 else x + y
-         addPixelRGB8 (PixelRGB8 r1 g1 b1) (PixelRGB8 r2 g2 b2) =
-           PixelRGB8 (clamp r1 r2) (clamp g1 g2) (clamp b1 b2)
-     in l1 i ray `addPixelRGB8` l2 i ray
+     l1 i ray `addPixelRGB8` l2 i ray
   {-# INLINE mappend #-}
+
+
+
+addPixelRGB8 :: PixelRGB8 -> PixelRGB8 -> PixelRGB8
+addPixelRGB8 (PixelRGB8 r1 g1 b1) (PixelRGB8 r2 g2 b2) =
+  let clamp x y = if x + y < x then 255 else x + y
+  in PixelRGB8 (clamp r1 r2) (clamp g1 g2) (clamp b1 b2)
+{-# INLINEABLE addPixelRGB8 #-}
+
+scalePixelRGB8 :: Double -> PixelRGB8 -> PixelRGB8
+scalePixelRGB8 f (PixelRGB8 r g b) =
+  let r' = round $ f * p2d r
+      g' = round $ f * p2d g
+      b' = round $ f * p2d b
+  in PixelRGB8 r' g' b'
+{-# INLINEABLE scalePixelRGB8 #-}
 
 -- | Helper function to convert a 'Pixel8' to a Double
 p2d :: Pixel8 -> Double
@@ -373,8 +386,6 @@ pointLight :: Shape -> Double -> Double -> Vector3D -> Light
 pointLight world diffuse specular lpos =
   MkLight $ \(ipos,inormal,_,material) ray ->
     let to_light = normalize (lpos - ipos)
-        (PixelRGB8 dr dg db) = mat_diffuse material
-        (PixelRGB8 sr sg sb) = mat_specular material
         s = mat_specularity material
         ray_to_light = mkray (ipos + scalar 0.00001 to_light) to_light
     in case intersect world ray_to_light of
@@ -391,19 +402,14 @@ pointLight world diffuse specular lpos =
                 0
               else
                 specular * (max 0 (reflection' *@ ray_direction ray) ** s)
-            f = min 1.0 (fDiffuse + fSpecular)
-            r = round $ f * p2d dr
-            g = round $ f * p2d dg
-            b = round $ f * p2d db
-        in PixelRGB8 r g b
+        in scalePixelRGB8 fDiffuse  (mat_diffuse material)
+           `addPixelRGB8`
+           scalePixelRGB8 fSpecular (mat_specular material)
 
 -- | Ambient light, simply contributes a given intensity to every pixel.
 ambient :: Double -> Light
-ambient f = MkLight $ \(_,_,_, MkMaterial (PixelRGB8 ir ig ib) _ _) _ ->
-  let r = round $ f * p2d ir
-      g = round $ f * p2d ig
-      b = round $ f * p2d ib
-  in PixelRGB8 r g b
+ambient f = MkLight $ \(_,_,_,material) _ ->
+  scalePixelRGB8 f (mat_diffuse material)
 
 -------------------------------------------------------------------------------
 -- Camera: casts (creates) rays.
