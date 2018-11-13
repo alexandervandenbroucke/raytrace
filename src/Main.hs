@@ -493,7 +493,21 @@ main =
       -- world = triangle_example
       -- (world,lights) = intersection
       -- world = cubes
-      (world,lights) = spheres
+      -- (world,lights) = spheres
+      (world,lights) =
+        let f x y = exp (-(x*x + y*y) * 4)
+            fnorm x y =
+              normalize $ MkV3D dfdx dfdy (-1) *# MkV3D dfdy dfdx 0 where
+                dfdx = -8 * x * (x*x + y*y) * f x y
+                dfdy = -8 * y * (x*x + y*y) * f x y
+        in linearInterpolation f (Just fnorm) (-1.5,-1.5) (1.5,1.5) 0.25 (MkV3D 0 (-7) (-25)) 10
+        -- let f x y = sin x * sin y + 2
+        --     fnorm x y =
+        --       normalize $ MkV3D dfdx dfdy (-1) *# MkV3D dfdy dfdx 0 where
+        --         dfdx = cos x * sin y
+        --         dfdy = sin x * cos y
+        --     origin = (MkV3D 0 (-30) (-70))
+        -- in  linearInterpolation f (Just fnorm) (-2*pi,-pi/2) (2*pi,pi/2) (pi/10) origin 7
       camera = fixedCamera w h
       -- light  = pointLight world 0.03 0.2 (MkV3D 2 0 0)
       -- light2 = pointLight world 0.3 1.0 (MkV3D 0 4 (-10))
@@ -811,4 +825,61 @@ bsp =
             `mappend`
             bspLines (MkV3D 0 0 (-15)) (0,10) (0,10) (read str)
     light = pointLight shape 0.3 0.6 (MkV3D 0 0 0)
+  in (shape,light)
+
+-- | Draw an arbitrary function by linearily interpolating it with triangles.
+-- Generalisation options:
+--   * Instead of always computing a fixed grid of interpolation points, take
+--     a list [(Double,Double)] of interpolation points, and define a separate
+--     function to compute an equidistant grid, or variants that have adaptive
+--     density.
+--   * For differentiable functions, we can also (bilinearily) interpolate the
+--     normals, possibly improving performance.
+linearInterpolation
+  :: (Double -> Double -> Double)           -- ^ Function to render
+  -> (Maybe (Double -> Double -> Vector3D)) -- ^ Function's normals
+  -> (Double,Double)                        -- ^ bottom left grid point
+  -> (Double,Double)                        -- ^ top right grid point
+  -> Double                                 -- ^ interpolation step size
+  -> Vector3D                               -- ^ origin
+  -> Double                                 -- ^ scale
+  -> (Shape,Light)
+linearInterpolation f fnorm (x1,y1) (x2,y2) step origin scale =
+  let grid = [(x,y) | x <- steps x1 x2, y <- steps y1 y2 ] where
+        steps a b = takeWhile (< b) [a,a + step..]
+
+      triangles =
+        [ normals $ mconcat [
+              triangle mat (f' x y') (f' x' y') (f' x y),
+              triangle mat (f' x y) (f' x' y') (f' x' y) ]
+          | (x,y) <- grid, let x' = x + step, let y' = y + step ]
+
+      normals shape = case fnorm of
+        Nothing -> shape
+        Just fnorm' -> MkShape $ \ray -> do
+          (i,_,t,m) <- intersect shape ray
+          let MkV3D x _ z = scalar scaleInv (i - offset)
+          return (i, fnorm' x z, t, m)
+
+      shape = mconcat [
+        mconcat triangles,
+        (rectangle
+         aquamarine
+         origin
+         (MkV3D (1.2 * scale * w) 0 0)
+         (MkV3D 0 0 (-1.2 * scale * h)))]
+
+      light = mconcat [
+        pointLight shape 0.3 0.7 (origin + MkV3D 0 (scale * 10) (-scale * w/2)),
+        ambient 0.4]
+
+      mat = white{mat_reflectivity = 0.0, mat_specularity = 400}
+
+      f' a b = offset + scalar scale (MkV3D a (f a b) b)
+      offset = origin - scalar scale (MkV3D x 0 y)
+      x = (x2 + x1) / 2
+      y = (y2 + y1) / 2
+      w = (x2 - x1)
+      h = (y2 - y1)
+      scaleInv = recip scale
   in (shape,light)
