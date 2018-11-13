@@ -883,3 +883,16 @@ linearInterpolation f fnorm (x1,y1) (x2,y2) step origin scale =
       h = (y2 - y1)
       scaleInv = recip scale
   in (shape,light)
+
+-- | Show normals of a shape in a colourful way.
+colourNormals :: Shape -> Shape
+colourNormals shape =
+  let mat (MkV3D x y z) = MkMaterial {
+        mat_diffuse = PixelRGB8 (d2i x) (d2i y) (d2i z),
+        mat_specular = black,
+        mat_specularity = 0,
+        mat_reflectivity = 0 }
+      d2i x = floor (255 * x)
+  in MkShape $ \ray -> do
+    (i,n,t,_) <- intersect shape ray
+    return (i,n,t, mat n)
