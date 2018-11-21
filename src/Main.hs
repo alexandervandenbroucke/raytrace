@@ -892,7 +892,7 @@ colourNormals shape =
         mat_specular = black,
         mat_specularity = 0,
         mat_reflectivity = 0 }
-      d2i x = floor (255 * x)
+      d2i x = floor (255 * ((x + 1) / 2))
   in MkShape $ \ray -> do
     (i,n,t,_) <- intersect shape ray
     return (i,n,t, mat n)
