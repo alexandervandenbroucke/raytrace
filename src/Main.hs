@@ -495,19 +495,33 @@ main =
       -- world = cubes
       -- (world,lights) = spheres
       (world,lights) =
+        -- gaussian
         let f x y = exp (-(x*x + y*y) * 4)
             fnorm x y =
-              normalize $ MkV3D dfdx dfdy (-1) *# MkV3D dfdy dfdx 0 where
-                dfdx = -8 * x * (x*x + y*y) * f x y
-                dfdy = -8 * y * (x*x + y*y) * f x y
-        in linearInterpolation f (Just fnorm) (-1.5,-1.5) (1.5,1.5) 0.25 (MkV3D 0 (-7) (-25)) 10
+              normalize $ MkV3D 1 dfdx 0 *# MkV3D 0 dfdy 1 where
+                dfdx = -8 * x * f x y
+                dfdy = -8 * y * f x y
+        in linearInterpolation f Nothing (-1.0,-1.0) (1.0,1.0) 0.2 (MkV3D 0.01 (-7) (-25)) 10
+        -- -- 3D sinc function
+        -- let f x y | x == 0 && y == 0 = 4
+        --           | x == 0 = 1 + sin y / y + 2
+        --           | y == 0 = 1 + sin x / x + 2
+        --           | otherwise = sin x / x + sin y / y + 2
+        --     fnorm 0 0 = MkV3D 0 1 0
+        --     fnorm x y =
+        --       normalize $ MkV3D 1 dfdy 0 *# MkV3D 0 dfdy 1 where
+        --         dfdx = (x * cos x - sin x) / (x*x)
+        --         dfdy = (y * cos y - sin y) / (y*y)
+        --     origin = MkV3D 0.01 (-10) (-20)
+        -- in linearInterpolation f (Just fnorm) (-4*pi,-2*pi) (4*pi,2*pi) (pi/4) origin 1
+        -- -- 3D sine-cosine waveform
         -- let f x y = sin x * sin y + 2
         --     fnorm x y =
-        --       normalize $ MkV3D dfdx dfdy (-1) *# MkV3D dfdy dfdx 0 where
+        --       normalize $ MkV3D 1 dfdx 0 *# MkV3D 0 dfdy 1 where
         --         dfdx = cos x * sin y
         --         dfdy = sin x * cos y
         --     origin = (MkV3D 0 (-30) (-70))
-        -- in  linearInterpolation f (Just fnorm) (-2*pi,-pi/2) (2*pi,pi/2) (pi/10) origin 7
+        -- in  linearInterpolation f Nothing (-2*pi,-pi/2) (2*pi,pi/2) (pi/10) origin 7
       camera = fixedCamera w h
       -- light  = pointLight world 0.03 0.2 (MkV3D 2 0 0)
       -- light2 = pointLight world 0.3 1.0 (MkV3D 0 4 (-10))
