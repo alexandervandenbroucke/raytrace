@@ -501,7 +501,7 @@ main =
               normalize $ MkV3D 1 dfdx 0 *# MkV3D 0 dfdy 1 where
                 dfdx = -8 * x * f x y
                 dfdy = -8 * y * f x y
-        in linearInterpolation f Nothing (-1.0,-1.0) (1.0,1.0) 0.2 (MkV3D 0.01 (-7) (-25)) 10
+        in linearInterpolation f (Just fnorm) (-1.0,-1.0) (1.0,1.0) 0.2 (MkV3D 0.01 (-7) (-25)) 10
         -- -- 3D sinc function
         -- let f x y | x == 0 && y == 0 = 4
         --           | x == 0 = 1 + sin y / y + 2
@@ -860,7 +860,7 @@ linearInterpolation
   -> (Shape,Light)
 linearInterpolation f fnorm (x1,y1) (x2,y2) step origin scale =
   let grid = [(x,y) | x <- steps x1 x2, y <- steps y1 y2 ] where
-        steps a b = takeWhile (< b) [a,a + step..]
+        steps a b = takeWhile (< b) (iterate (+ step) a)
 
       triangles =
         [ normals $ mconcat [
@@ -871,23 +871,24 @@ linearInterpolation f fnorm (x1,y1) (x2,y2) step origin scale =
       normals shape = case fnorm of
         Nothing -> shape
         Just fnorm' -> MkShape $ \ray -> do
-          (i,_,t,m) <- intersect shape ray
-          let MkV3D x _ z = scalar scaleInv (i - offset)
-          return (i, fnorm' x z, t, m)
+          (i,n,t,m) <- intersect shape ray
+          let MkV3D x _ y = scalar scaleInv (i - offset)
+              n' = fnorm' x y
+          return (i, scalar (signum (n *@ n')) n', t, m)
 
       shape = mconcat [
         mconcat triangles,
         (rectangle
          aquamarine
          origin
-         (MkV3D (1.2 * scale * w) 0 0)
-         (MkV3D 0 0 (-1.2 * scale * h)))]
+         (MkV3D (1.5 * scale * w) 0 0)
+         (MkV3D 0 0 (-1.5 * scale * h)))]
 
       light = mconcat [
-        pointLight shape 0.3 0.7 (origin + MkV3D 0 (scale * 10) (-scale * w/2)),
-        ambient 0.4]
+        pointLight shape 0.3 0.6 (origin + MkV3D (scale * w/4) (scale * 10) (scale * w/4)),
+        ambient 0.3]
 
-      mat = white{mat_reflectivity = 0.0, mat_specularity = 400}
+      mat = white{mat_specularity = 1}
 
       f' a b = offset + scalar scale (MkV3D a (f a b) b)
       offset = origin - scalar scale (MkV3D x 0 y)
