@@ -206,6 +206,7 @@ instance Monoid Shape where
     let intersect' ray = do
           let isect1 = intersect shape1 ray
               isect2 = intersect shape2 ray
+          guard (intersectBB bb ray)
           case (isect1,isect2) of
             (Nothing,_) -> isect2
             (_,Nothing) -> isect1
