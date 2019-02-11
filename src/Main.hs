@@ -186,10 +186,11 @@ data Material
 
 -- | A 'Shape' is something that can test for intersection with a 'Ray'.
 --   When there is an intersection 'Just' an 'Intersection' is returned.
-newtype Shape
+data Shape
   = MkShape
     {
-      intersect :: Ray -> Maybe Intersection
+      intersect :: Ray -> Maybe Intersection,
+      boundingBox :: !BoundingBox
     }
 
 instance Semigroup Shape where
@@ -200,16 +201,20 @@ instance Semigroup Shape where
 --   The @mappend@ of two 'Shape's is a 'Shape' that returns the interesection
 --   that is closest.
 instance Monoid Shape where
-  mempty  = MkShape (const Nothing)
-  r1 `mappend` r2 = MkShape $ \ray -> 
-     let isect1 = intersect r1 ray
-         isect2 = intersect r2 ray
-     in case (isect1,isect2) of
-         (Nothing,_) -> isect2
-         (_,Nothing) -> isect1
-         (Just (_,_,t1,_), Just (_,_,t2,_)) ->
-           if t1 <= t2 then isect1 else isect2
+  mempty = MkShape (const Nothing) (MkBB 0 0)
+  mappend shape1 shape2 =
+    let intersect' ray = do
+          let isect1 = intersect shape1 ray
+              isect2 = intersect shape2 ray
+          case (isect1,isect2) of
+            (Nothing,_) -> isect2
+            (_,Nothing) -> isect1
+            (Just (_,_,t1,_), Just (_,_,t2,_)) ->
+              if t1 <= t2 then isect1 else isect2
+        bb = boundingBox shape1 <> boundingBox shape2
+    in MkShape intersect' bb
   {-# INLINE mappend #-}
+
 
 -- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 -- Planes (rectangles)
@@ -224,15 +229,20 @@ rectangle material point width height =
       hh     = height *@ height
       point' = point - scalar 0.5 width - scalar 0.5 height
       d = -(point *@ normal)
-  in MkShape $ \ray -> do
-      (isect,t) <- planeRayIsect normal d ray
-      -- verify within bounds of rectangle
-      guard $
-        let dV = isect - point'
-            dw = dV *@ width
-            dh = dV *@ height
-        in 0 <= dw && dw <= ww && 0 <= dh && dh <= hh
-      return (isect, normal,t,material)
+  in MkShape {
+    intersect = \ray -> do
+        (isect,t) <- planeRayIsect normal d ray
+        -- verify within bounds of rectangle
+        guard $
+          let dV = isect - point'
+              dw = dV *@ width
+              dh = dV *@ height
+          in 0 <= dw && dw <= ww && 0 <= dh && dh <= hh
+        return (isect, normal,t,material),
+    boundingBox =
+        let point'' = point' + width + height
+        in MkBB (minV point' point'') (maxV point' point'')
+  }
 
 -- | Helper function to decide if a ray intersects a plane.
 --   Takes the normal of the plane, it's "d" component and a ray.
@@ -359,16 +369,19 @@ triangle material pa pb pc =
       n = uv * uv - uu * vv
       normal = normalize (u *# v)
       d = scalar (-1) pa *@ normal
-  in MkShape $ \ray -> do
-    (isect,t) <- planeRayIsect normal d ray
-    let w = isect - pa
-        wv = w *@ v
-        wu = w *@ u
-        r = (uv * wv - vv * wu) / n
-        s = (uv * wu - uu * wv) / n
-    -- verify within bounds of triangle
-    guard (r >= 0 && s >= 0 && r + s <= 1)
-    return (isect,normal,t,material)
+  in MkShape {
+      intersect = \ray -> do
+          (isect,t) <- planeRayIsect normal d ray
+          let w = isect - pa
+              wv = w *@ v
+              wu = w *@ u
+              r = (uv * wv - vv * wu) / n
+              s = (uv * wu - uu * wv) / n
+          -- verify within bounds of triangle
+          guard (r >= 0 && s >= 0 && r + s <= 1)
+          return (isect,normal,t,material),
+      boundingBox = MkBB (minV pa (minV pb pc)) (maxV pa (maxV pb pc))
+    }
 
 -- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 -- Sphere
@@ -377,22 +390,28 @@ triangle material pa pb pc =
 -- The sphere is identified by its center point and radius.
 sphere :: Material -> Vector3D -> Double -> Shape
 sphere material center radius =
-  MkShape $ \ray -> do
-    let o = ray_position ray - center
-        d = ray_direction ray
-        b = 2 * d *@ o
-        c = (o *@ o) - radius*radius
-        delta = b*b - 4 * c
-    guard (delta >= 0)
-    let t = if delta > 0 then
-              let t1 = (-b + sqrt delta) / 2
-                  t2 = (-b - sqrt delta) / 2
-              in min (max t1 0) (max t2 0)
-            else -b / 2
-    guard (t > 0)
-    let isect  = ray_position ray + scalar t d
-        normal = scalar (recip radius) (isect - center)
-    return (isect,normal,t,material)
+  MkShape {
+    intersect = \ray -> do
+        let o = ray_position ray - center
+            d = ray_direction ray
+            b = 2 * d *@ o
+            c = (o *@ o) - radius*radius
+            delta = b*b - 4 * c
+        guard (delta >= 0)
+        let t =
+              if delta > 0 then
+                let t1 = (-b + sqrt delta) / 2
+                    t2 = (-b - sqrt delta) / 2
+                in min (max t1 0) (max t2 0)
+              else -b / 2
+        guard (t > 0)
+        let isect  = ray_position ray + scalar t d
+            normal = scalar (recip radius) (isect - center)
+        return (isect,normal,t,material),
+    boundingBox =
+        let rv = MkV3D radius radius radius
+        in MkBB (center - rv) (center + rv)
+  }
 
 
 -------------------------------------------------------------------------------
@@ -742,11 +761,15 @@ cylinder topM botM mantleM point n h r  =
             dP = p1 - p2 -- aka the width of this piece
             dN = n1 - n2
             dNdP  = dN / dP
-        in MkShape $ \ray -> do
-          (i,_,t,color) <- intersect (rectangle mantleM p dP (MkV3D 0 h 0)) ray
-          let MkV3D nx _ nz = n2 + (i - p2) * dNdP
+            rect = rectangle mantleM p dP (MkV3D 0 h 0)
+        in MkShape {
+          intersect = \ray -> do
+              (i,_,t,color) <- intersect rect ray
+              let MkV3D nx _ nz = n2 + (i - p2) * dNdP
               -- linearly interpolated normal
-          return (i, MkV3D nx 0 nz,t,color)
+              return (i, MkV3D nx 0 nz,t,color),
+          boundingBox = boundingBox rect
+        }
   in bot `mappend` top `mappend` mantle
 
 spec_test :: (Shape,Light)
@@ -931,11 +954,14 @@ linearInterpolation f fnorm (x1,y1) (x2,y2) step origin scale =
 
       normals shape = case fnorm of
         Nothing -> shape
-        Just fnorm' -> MkShape $ \ray -> do
-          (i,n,t,m) <- intersect shape ray
-          let MkV3D x _ y = scalar scaleInv (i - offset)
-              n' = fnorm' x y
-          return (i, scalar (signum (n *@ n')) n', t, m)
+        Just fnorm' -> MkShape
+          { intersect = \ray -> do
+              (i,n,t,m) <- intersect shape ray
+              let MkV3D x _ y = scalar scaleInv (i - offset)
+                  n' = fnorm' x y
+              return (i, scalar (signum (n *@ n')) n', t, m),
+            boundingBox = boundingBox shape
+          }
 
       shape = mconcat [
         mconcat triangles,
@@ -969,6 +995,35 @@ colourNormals shape =
         mat_specularity = 0,
         mat_reflectivity = 0 }
       d2i x = floor (255 * ((x + 1) / 2))
-  in MkShape $ \ray -> do
-    (i,n,t,_) <- intersect shape ray
-    return (i,n,t, mat n)
+  in MkShape {
+    intersect = \ray -> do
+        (i,n,t,_) <- intersect shape ray
+        return (i,n,t, mat n),
+    boundingBox = boundingBox shape
+  }
+
+-- | Show the bounding box of a Shape
+drawBoundingBox :: Shape -> Shape
+drawBoundingBox shape =
+  let box material p width height depth =
+        let p' = p + scalar 0.5 (MkV3D width height depth)
+        in cuboid material p' width height depth
+      MkBB (MkV3D x1 y1 z1) (MkV3D x2 y2 z2) = boundingBox shape
+      bb = mconcat [
+        -- front
+        box blue (MkV3D x1 y1 z1) (x2 - x1) 0.05 0.05,
+        box green (MkV3D x1 y1 z1) 0.05 (y2 - y1) 0.05,
+        box blue (MkV3D x2 y2 z1) (x1 - x2) 0.05 0.05,
+        box green (MkV3D x2 y2 z1) 0.05 (y1 - y2) 0.05,
+        -- back
+        box blue (MkV3D x1 y1 z2) (x2 - x1) 0.05 0.05,
+        box green (MkV3D x1 y1 z2) 0.05 (y2 - y1) 0.05,
+        box blue (MkV3D x2 y2 z2) (x1 - x2) 0.05 0.05,
+        box green (MkV3D x2 y2 z2) 0.05 (y1 - y2) 0.05,
+        -- left
+        box red (MkV3D x1 y1 z1) 0.05 0.05 (z2 - z1),
+        box red (MkV3D x1 y2 z1) 0.05 0.05 (z2 - z1),
+        -- right
+        box red (MkV3D x2 y1 z1) 0.05 0.05 (z2 - z1),
+        box red (MkV3D x2 y2 z1) 0.05 0.05 (z2 - z1)]
+  in shape <> bb
