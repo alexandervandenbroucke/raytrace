@@ -137,6 +137,9 @@ newtype Shape
       intersect :: Ray -> Maybe Intersection
     }
 
+instance Semigroup Shape where
+  (<>) = mappend
+
 -- | Shapes are monoids.
 --   The empty element is a 'Shape' that does not interesect any 'Ray'.
 --   The @mappend@ of two 'Shape's is a 'Shape' that returns the interesection
@@ -347,6 +350,9 @@ newtype Light
     {
       light :: Intersection -> Ray -> PixelRGB8
     }
+
+instance Semigroup Light where
+  (<>) = mappend
 
 -- | Lights are monoids.
 --   The empty light contributes no shade to a pixel.
