@@ -26,7 +26,7 @@ data Vector3D
     {-# UNPACK #-} !Double
     {-# UNPACK #-} !Double
     {-# UNPACK #-} !Double
-  deriving Show
+  deriving (Eq,Show)
 
 instance Num Vector3D where
   MkV3D x1 y1 z1 + MkV3D x2 y2 z2 = MkV3D (x1+x2) (y1+y2) (z1+z2)
@@ -46,6 +46,17 @@ instance Fractional Vector3D where
   MkV3D x1 y1 z1 / MkV3D x2 y2 z2 = MkV3D (x1/x2) (y1/y2) (z1/z2)
   recip (MkV3D x y z) = MkV3D (recip x) (recip y) (recip z)
   fromRational r = MkV3D r' r' r' where r' = fromRational r
+
+-- | Point-wise minimum
+minV :: Vector3D -> Vector3D -> Vector3D
+minV (MkV3D x1 y1 z1) (MkV3D x2 y2 z2) =
+  MkV3D (min x1 x2) (min y1 y2) (min z1 z2)
+
+-- | Point-wise maximum
+maxV :: Vector3D -> Vector3D -> Vector3D
+maxV (MkV3D x1 y1 z1) (MkV3D x2 y2 z2) =
+  MkV3D (max x1 x2) (max y1 y2) (max z1 z2)
+
 
 -- | Inner product
 (*@) :: Vector3D -> Vector3D -> Double
@@ -85,7 +96,7 @@ data Ray
     {
       ray_position  :: !Vector3D,
       ray_direction :: !Vector3D,
-      ray_recip     :: !Double
+      ray_recip     :: !Vector3D
     }
   deriving Show
 
@@ -101,7 +112,7 @@ mkray position direction@(MkV3D x y z) =
       clamp d = if abs d <= eps then eps else d
       {-# INLINE clamp #-}
       eps = 2.2*(10**(-308))
-  in MkRay position (MkV3D x' y' z') (recip z')
+  in MkRay position (MkV3D x' y' z') (recip (MkV3D x' y' z'))
 
 -- | Given a 'Ray' and a point along the ray, return the distance travelled.
 --   More  precisely, given ray @r@ and point @p@ return t such that
@@ -111,7 +122,8 @@ mkray position direction@(MkV3D x y z) =
 rayDistance :: Ray -> Vector3D -> Double
 rayDistance r (MkV3D _ _ pz) =
   let MkV3D _ _ z = ray_position r
-  in (pz - z) * ray_recip r
+      MkV3D _ _ rz = ray_recip r
+  in (pz - z) * rz
 {-# INLINE rayDistance #-}
 
 -- | A 4-tuple of the intersection postion, surface normal at this position,
