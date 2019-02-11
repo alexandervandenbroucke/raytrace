@@ -130,6 +130,49 @@ rayDistance r (MkV3D _ _ pz) =
 --   the distance along the ray and the material at that position is returned.
 type Intersection = (Vector3D,Vector3D,Double,Material)
 
+-- | A bounding volume is defined by its two extreme points.
+data BoundingBox
+  = MkBB
+    {
+      minBound :: !Vector3D,
+      maxBound :: !Vector3D
+    }
+  deriving (Eq,Show)
+
+instance Semigroup BoundingBox where
+  (<>) = mappend
+instance Monoid BoundingBox where
+  mempty = MkBB 0 0
+  mappend bv1 bv2
+    | bv1 == mempty = bv2
+    | bv2 == mempty = bv1
+  mappend (MkBB min1 max1) (MkBB min2 max2) =
+    MkBB (minV min1 min2) (maxV max1 max2)
+
+intersectBB :: BoundingBox -> Ray -> Bool
+intersectBB (MkBB (MkV3D x0 y0 z0) (MkV3D x1 y1 z1)) ray =
+  let MkV3D px py pz = ray_position ray
+      MkV3D dx dy dz = ray_direction ray
+      MkV3D rx ry rz = ray_recip ray
+      isectXY z =
+        let t = (z - pz) * rz
+            x' = px + t*dx
+            y' = py + t*dy
+        in t >= 0 && x0 <= x' && x' <= x1 && y0 <= y' && y' <= y1
+      isectYZ x =
+        let t = (x - px) * rx
+            y' = py + t*dy
+            z' = pz + t*dz
+        in t >= 0 && y0 <= y' && y' <= y1 && z0 <= z' && z' <= z1
+      isectXZ y =
+        let t = (y - py) * ry
+            x' = px + t*dx
+            z' = pz + t*dz
+        in t >= 0 && x0 <= x' && x' <= x1 && z0 <= z' && z' <= z1
+  in or [ isectXY z0, isectXY z1,
+          isectXZ y0, isectXZ y1,
+          isectYZ x0, isectYZ x1]
+
 -- | Materials specify the diffuse and specular reflexivity as well as the
 --   specularity (shinyness) of a 'Shape'.
 data Material
